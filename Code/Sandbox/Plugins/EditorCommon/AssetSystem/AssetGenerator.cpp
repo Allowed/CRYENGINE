@@ -75,34 +75,31 @@ void CAssetGenerator::OnFileChange(const char* szFilename, EChangeType changeTyp
 		return;
 	}
 
-	const string cryasset = string().Format("%s.cryasset", szFilename).MakeLower();
-
 	// Refresh cryasset files for the following types even if exists. 
 	// These asset types do not have true asset editors to update cryasset files.
 	static const char* const update[] = { "lua", "xml", "mtl", "cdf" };
-
 	const char* szExt = PathUtil::GetExt(szFilename);
-
-	const bool  bUpdate = std::any_of(std::begin(update), std::end(update), [szExt](const char* szUpdatable)
+	const bool updateExisting = std::any_of(std::begin(update), std::end(update), [szExt](const char* szUpdatable)
 	{
 		return stricmp(szExt, szUpdatable) == 0;
 	});
 
-	if (!bUpdate && GetISystem()->GetIPak()->IsFileExist(cryasset))
-	{
-		return;
-	}
-
 	const char* const szAssetDirectory = GetIEditor()->GetProjectManager()->GetCurrentAssetDirectoryAbsolute();
 	const string filePath = PathUtil::Make(szAssetDirectory, szFilename);
 
-	m_fileQueue.ProcessItemUniqueAsync(filePath, [this](const string& path)
+	m_fileQueue.ProcessItemUniqueAsync(filePath, [this, updateExisting](const string& path)
 	{
 		// It can be that the file is still being opened for writing.
-		if (IsFileOpened(path))
+		if (m_waitForTextureCompiler || IsFileOpened(path))
 		{
 			// Try again
 			return false;
+		}
+
+		const string cryasset = string().Format("%s.cryasset", path.c_str()).MakeLower();
+		if (!updateExisting && GetISystem()->GetIPak()->IsFileExist(cryasset))
+		{
+			return true;
 		}
 
 		GenerateCryasset(path);
@@ -129,6 +126,8 @@ bool CAssetGenerator::GenerateCryassets()
 
 CAssetGenerator::CAssetGenerator()
 {
+	GetIEditor()->GetSystem()->GetIRenderer()->AddAsyncTextureCompileListener(this);
+
 	const std::vector<CAssetType*>& types = CAssetManager::GetInstance()->GetAssetTypes();
 
 	m_rcSettings.reserve(types.size() * 20);
@@ -202,6 +201,47 @@ void CAssetGenerator::GenerateCryasset(const string& filePath)
 				}
 			});
 	});
+}
+
+void CAssetGenerator::OnCompilationStarted(const char* szSource, const char* szTarget, int nPending)
+{
+	std::unique_lock<std::mutex> lock(m_textureCompilerMutex);
+	if (m_pTextureCompilerProgress)
+	{
+		m_pTextureCompilerProgress->SetMessage(QtUtil::ToQString(PathUtil::GetFile(szSource)));
+	}
+}
+
+void CAssetGenerator::OnCompilationFinished(const char* szSource, const char* szTarget, ERcExitCode eReturnCode)
+{
+}
+
+void CAssetGenerator::OnCompilationQueueTriggered(int nPending)
+{
+	std::unique_lock<std::mutex> lock(m_textureCompilerMutex);
+
+	if (!m_waitForTextureCompiler)
+	{
+		m_pTextureCompilerProgress.reset(new CProgressNotification(QObject::tr("Compiling textures"), QString()));
+	}
+
+	++m_waitForTextureCompiler;
+}
+
+void CAssetGenerator::OnCompilationQueueDepleted()
+{
+	std::unique_lock<std::mutex> lock(m_textureCompilerMutex);
+
+	if (m_waitForTextureCompiler > 0)
+	{
+		--m_waitForTextureCompiler;
+	}
+	
+	if (!m_waitForTextureCompiler)
+	{
+		m_pTextureCompilerProgress.reset();
+	}
+
 }
 
 }
