@@ -1,12 +1,5 @@
 // Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
-// -------------------------------------------------------------------------
-//  Created:     23/09/2014 by Filipe amim
-//  Description:
-// -------------------------------------------------------------------------
-//
-////////////////////////////////////////////////////////////////////////////
-
 #include "StdAfx.h"
 #include "ParticleEffect.h"
 #include "ParticleSystem.h"
@@ -64,8 +57,21 @@ void CParticleEffect::Compile()
 		for (auto feature : component->MainPreUpdate)
 			MainPreUpdate.push_back( {component, feature} );
 	}
+
+	m_timings = {};
 	for (auto& component : m_components)
+	{
 		component->FinalizeCompile();
+		if (!component->GetParentComponent())
+		{
+			component->UpdateTimings();
+			const STimingParams& timings = component->ComponentParams();
+			SetMax(m_timings.m_maxParticleLife, timings.m_maxParticleLife);
+			SetMax(m_timings.m_stableTime, timings.m_stableTime);
+			SetMax(m_timings.m_equilibriumTime, timings.m_equilibriumTime);
+			SetMax(m_timings.m_maxTotalLIfe, timings.m_maxTotalLIfe);
+		}
+	}
 
 	m_dirty = false;
 }
@@ -113,10 +119,10 @@ string CParticleEffect::MakeUniqueName(const CParticleComponent* forComponent, c
 		return string(name);
 
 	string newName = name;
-	int pos = newName.length() - 1;
 
 	do
 	{
+		int pos = newName.length() - 1;
 		while (pos >= 0 && newName[pos] == '9')
 		{
 			newName.replace(pos, 1, 1, '0');
@@ -127,7 +133,7 @@ string CParticleEffect::MakeUniqueName(const CParticleComponent* forComponent, c
 		else
 			newName.replace(pos, 1, 1, newName[pos] + 1);
 	}
-	while (FindComponentByName(newName));
+	while ((found = FindComponentByName(newName)) && found != forComponent);
 
 	return newName;
 }
@@ -140,22 +146,6 @@ uint CParticleEffect::AddRenderObjectId()
 uint CParticleEffect::GetNumRenderObjectIds() const
 {
 	return m_numRenderObjects;
-}
-
-float CParticleEffect::GetEquilibriumTime() const
-{
-	float maxEqTime = 0.0f;
-	for (const auto& pComponent : m_components)
-	{
-		// Iterate top-level components
-		auto const& params = pComponent->GetComponentParams();
-		if (pComponent->IsEnabled() && !pComponent->GetParentComponent() && params.IsImmortal())
-		{
-			float eqTime = pComponent->GetEquilibriumTime(Range(params.m_emitterLifeTime.start));
-			maxEqTime = max(maxEqTime, eqTime);
-		}
-	}
-	return maxEqTime;
 }
 
 string CParticleEffect::GetShortName() const
@@ -194,6 +184,10 @@ void CParticleEffect::Serialize(Serialization::IArchive& ar)
 	ar(documentVersion, "Version", "");
 	SSerializationContext documentContext(documentVersion);
 	Serialization::SContext context(ar, &documentContext);
+
+	if (documentVersion < gMinimumVersion || documentVersion > gCurrentVersion)
+		gEnv->pLog->LogError("Particle effect %s has unsupported version %d. Valid versions are %d to %d. Some values may be incorrectly read.", 
+			GetName(), documentVersion, gMinimumVersion, gCurrentVersion);
 
 	ar(*m_pAttributes, "Attributes");
 
@@ -248,9 +242,25 @@ IParticleComponent* CParticleEffect::AddComponent()
 	return pNewComponent;
 }
 
-void CParticleEffect::RemoveComponent(uint componentIdx)
+void CParticleEffect::RemoveComponent(uint componentIdx, bool bRecursive)
 {
-	m_components.erase(m_components.begin() + componentIdx);
+	if (componentIdx >= m_components.size())
+		return;
+	CParticleComponent* pComponent = m_components[componentIdx];
+	CParticleComponent* pParent = pComponent->GetParentComponent();
+	uint last = componentIdx + 1;
+	if (bRecursive)
+	{
+		while (last < m_components.size() && m_components[last]->GetParent() != pParent)
+			last++;
+	}
+	else
+	{
+		for (auto child : pComponent->GetChildComponents())
+			child->SetParent(pParent);
+	}
+	pComponent->SetParent(nullptr);
+	m_components.erase(m_components.begin() + componentIdx, m_components.begin() + last);
 	SetChanged();
 }
 
@@ -259,6 +269,11 @@ void CParticleEffect::SetChanged()
 	if (!m_dirty)
 		++m_editVersion;
 	m_dirty = true;
+}
+
+void CParticleEffect::Update()
+{
+	Compile();
 }
 
 Serialization::SStruct CParticleEffect::GetEffectOptionsSerializer() const

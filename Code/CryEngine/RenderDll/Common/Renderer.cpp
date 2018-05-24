@@ -69,7 +69,7 @@ string D3DDebug_GetLastMessage();
 #endif
 
 // Enum -> Bitmask lookup table
-uint32 ColorMasks[(ColorMask::Count >> GS_COLMASK_SHIFT)][4] =
+uint32 ColorMasks[(ColorMask::GS_NOCOLMASK_COUNT >> GS_COLMASK_SHIFT)][4] =
 {
 	{ 0x0, 0x0, 0x0, 0x0 }, // GS_NOCOLMASK_NONE
 	{ 0x1, 0x1, 0x1, 0x1 }, // GS_NOCOLMASK_R
@@ -85,7 +85,7 @@ uint32 ColorMasks[(ColorMask::Count >> GS_COLMASK_SHIFT)][4] =
 };
 
 // Bitmask -> Enum lookup table
-std::array<uint32, (ColorMask::Count >> GS_COLMASK_SHIFT)> AvailableColorMasks =
+std::array<uint32, (ColorMask::GS_NOCOLMASK_COUNT >> GS_COLMASK_SHIFT)> AvailableColorMasks =
 {
 	{
 		0x0, // GS_NOCOLMASK_NONE
@@ -1105,7 +1105,7 @@ _smart_ptr<IImageFile> CRenderer::EF_LoadImage(const char* szFileName, uint32 nF
 	return CImageFile::mfLoad_file(szFileName, nFlags);
 }
 
-bool CRenderer::EF_RenderEnvironmentCubeHDR (int size, Vec3& Pos, TArray<unsigned short>& vecData)
+bool CRenderer::EF_RenderEnvironmentCubeHDR (int size, const Vec3& Pos, TArray<unsigned short>& vecData)
 {
 	return CTexture::RenderEnvironmentCMHDR(size, Pos, vecData);
 }
@@ -1423,7 +1423,7 @@ void CRenderer::EF_CheckLightMaterial(SRenderLight* pLight, uint16 nRenderLightI
 		{
 			CRenderObject* pRO = passInfo.GetIRenderView()->AllocateTemporaryRenderObject();
 			pRO->m_fAlpha        = 1.0f;
-			pRO->m_II.m_AmbColor = Vec3(0, 0, 0);
+			pRO->SetAmbientColor(Vec3(0, 0, 0), passInfo);
 
 			SRenderObjData* pOD = pRO->GetObjData();
 
@@ -1432,8 +1432,8 @@ void CRenderer::EF_CheckLightMaterial(SRenderLight* pLight, uint16 nRenderLightI
 			pOD->m_fTempVars[3] = pLight->m_fRadius;
 			pOD->m_nLightID     = nRenderLightID;
 
-			pRO->m_II.m_AmbColor = pLight->m_Color;
-			pRO->m_II.m_Matrix   = pLight->m_ObjMatrix;
+			pRO->SetAmbientColor(pLight->m_Color, passInfo);
+			pRO->SetMatrix(pLight->m_ObjMatrix, passInfo);
 			pRO->m_ObjFlags     |= FOB_TRANS_MASK;
 
 			CRenderElement* pRE = pRendElemBase->Get(0);
@@ -2397,6 +2397,20 @@ void CRenderer::ScaleCoord(float& x, float& y) const
 	ScaleCoordInternal(x, y, SRenderViewport(0, 0, CRendererResources::s_displayWidth, CRendererResources::s_displayHeight));
 }
 
+int CRenderer::GetOverlayWidth() const
+{
+	if (GetIStereoRenderer()->GetStereoEnabled() && !GetIStereoRenderer()->IsMenuModeEnabled())
+		return GetIStereoRenderer()->GetOverlayResolution().x;
+	return CRendererResources::s_displayWidth;
+}
+
+int CRenderer::GetOverlayHeight() const
+{
+	if (GetIStereoRenderer()->GetStereoEnabled() && !GetIStereoRenderer()->IsMenuModeEnabled())
+		return GetIStereoRenderer()->GetOverlayResolution().y;
+	return CRendererResources::s_displayHeight;
+}
+
 // used for sprite generation
 void CRenderer::SetTextureAlphaChannelFromRGB(byte* pMemBuffer, int nTexSize)
 {
@@ -3249,7 +3263,7 @@ void IRenderer::SDrawCallCountInfo::Update(CRenderObject* pObj, IRenderMesh* pRM
 {
 	if (((IRenderNode*)pObj->m_pRenderNode))
 	{
-		pPos = pObj->GetTranslation();
+		pPos = pObj->GetMatrix(gcpRendD3D->GetObjectAccessorThreadConfig()).GetTranslation();
 
 		if (meshName[0] == '\0')
 		{
@@ -3934,6 +3948,7 @@ SSkinningData* CRenderer::EF_CreateSkinningData(IRenderView* pRenderView, uint32
 	pSkinningRenderData->pPreviousSkinningRenderData = NULL;
 	pSkinningRenderData->pCharInstCB                 = FX_AllocateCharInstCB(pSkinningRenderData, m_nPoolIndex);
 	pSkinningRenderData->remapGUID                   = ~0u;
+	pSkinningRenderData->vecAdditionalOffset.zero();
 
 	pSkinningRenderData->pNextSkinningData       = NULL;
 	pSkinningRenderData->pMasterSkinningDataList = &pSkinningRenderData->pNextSkinningData;

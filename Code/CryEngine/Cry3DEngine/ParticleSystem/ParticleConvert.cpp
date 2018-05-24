@@ -258,7 +258,7 @@ void ConvertParam(XmlNodeRef node, cstr name, P& param, float inDefault = 0.f, f
 	}
 
 	XmlNodeRef p = node->newChild(name);
-	XmlNodeRef mods = p->newChild(SerializeNames<PT>::mods());
+	XmlNodeRef mods = gEnv->pSystem->CreateXmlNode(SerializeNames<PT>::mods());
 
 	if (bInherit)
 	{
@@ -274,6 +274,9 @@ void ConvertParam(XmlNodeRef node, cstr name, P& param, float inDefault = 0.f, f
 		// Reset param to default value, to mark converted
 		ResetValue(param, inDefault);
 	}
+
+	if (mods->getChildCount())
+		p->addChild(mods);
 }
 
 // Convert just the base value of a pfx1 variant parameter; the variance remains unconverted
@@ -320,7 +323,7 @@ void LogError(const string& error, IParticleComponent* component = 0)
 {
 	if (component)
 	{
-		gEnv->pLog->Log(" Component %s: ! %s", component->GetName(), error.c_str());
+		CryLog(" Component %s: ! %s", component->GetName(), error.c_str());
 
 		static int nest = 0;
 		if (!nest++)
@@ -334,7 +337,7 @@ void LogError(const string& error, IParticleComponent* component = 0)
 	}
 	else
 	{
-		gEnv->pLog->Log("! %s", error.c_str());
+		CryLog("! %s", error.c_str());
 	}
 }
 
@@ -387,29 +390,26 @@ IParticleComponent* AddComponent(IParticleEffectPfx2& effect, cstr name)
 ///////////////////////////////////////////////////////////////////////
 // Feature-specific conversion
 
-void ConvertChild(IParticleComponent& parent, IParticleComponent& component, ParticleParams& params)
+void ConvertChild(IParticleComponent& component, ParticleParams& params)
 {
 	XmlNodeRef feature;
 
 	switch (params.eSpawnIndirection)
 	{
 	case ParticleParams::ESpawn::ParentStart:
-		feature = MakeFeature("SecondGenOnSpawn");
-		break;
-	case ParticleParams::ESpawn::ParentCollide:
-		feature = MakeFeature("SecondGenOnCollide");
+		feature = MakeFeature("ChildOnBirth");
 		break;
 	case ParticleParams::ESpawn::ParentDeath:
-		feature = MakeFeature("SecondGenOnDeath");
+		feature = MakeFeature("ChildOnDeath");
+		break;
+	case ParticleParams::ESpawn::ParentCollide:
+		feature = MakeFeature("ChildOnCollide");
 		break;
 	default:
 		return;
 	}
 
-	XmlNodeRef comp = feature->newChild("Components");
-	AddValue(comp, "Element", component.GetName());
-	AddFeature(parent, feature);
-
+	AddFeature(component, feature, true);
 	ResetValue(params.eSpawnIndirection);
 }
 
@@ -420,7 +420,7 @@ void ConvertSpawn(IParticleComponent& component, ParticleParams& params, bool al
 	ConvertParam(spawn, "Amount", params.fCount, 0.0f, 1.0f);
 	ConvertParam(spawn, "Delay", params.fSpawnDelay);
 	ConvertParam(spawn, "Duration", ZeroIsInfinity(params.fEmitterLifeTime, ResetValue(params.bContinuous)));
-	ConvertParam(spawn, "Restart", ZeroIsInfinity(params.fPulsePeriod));
+	ConvertParam(spawn, "Restart", ZeroIsInfinity(params.fPulsePeriod), 0.0f, gInfinity);
 
 	AddFeature(component, spawn);
 
@@ -583,8 +583,9 @@ void ConvertSprites(IParticleComponent& component, ParticleParams& params)
 
 			ConvertValue(render, "CameraOffset", params.fCameraDistanceOffset);
 			ConvertParamBase(render, "AspectRatio", params.fAspect, 1.f);
-			AddValue(render, "Offset", Vec2(params.fPivotX, -params.fPivotY));
-			params.fPivotX.Set(0); params.fPivotY.Set(0);
+			Vec2 pivot(params.fPivotX, -params.fPivotY);
+			ConvertValue(render, "Offset", pivot, Vec2(ZERO));
+ 			params.fPivotX.Set(0); params.fPivotY.Set(0);
 		}
 
 		if (XmlNodeRef project =
@@ -598,6 +599,7 @@ void ConvertSprites(IParticleComponent& component, ParticleParams& params)
 			ResetValue(params.eFacing);
 		}
 
+		AddValue(render, "SortMode", "NewToOld");
 		if (params.eFacing != ParticleParams::EFacing::Decal)
 			if (float bias = ResetValue(params.fSortOffset))
 				AddValue(render, "SortBias", -bias);  // Approximate conversion: pfx1 dist += SortOffset; pfx2 dist -= dist * SortBias / 1024
@@ -893,7 +895,7 @@ void ConvertVisibility(IParticleComponent& component, ParticleParams& params)
 	XmlNodeRef vis = MakeFeature("AppearanceVisibility");
 	ConvertValue(vis, "ViewDistanceMultiple", params.fViewDistanceAdjust, 1.f);
 	ConvertValue(vis, "MinCameraDistance", params.fCameraMinDistance);
-	ConvertValue(vis, "MaxCameraDistance", ZeroIsInfinity(params.fCameraMaxDistance));
+	ConvertValue(vis, "MaxCameraDistance", ZeroIsInfinity(params.fCameraMaxDistance), 0.0f, gInfinity);
 	switch (ResetValue(params.tVisibleIndoors, ETrinary::Both))
 	{
 		case ETrinary::If_True:  AddValue(vis, "IndoorVisibility", "IndoorOnly"); break;
@@ -1001,21 +1003,17 @@ IParticleComponent* ConvertTail(IParticleComponent& component, ParticleParams& p
 		return nullptr;
 
 	// Implement tail with ribbon child effect
-	XmlNodeRef tail = MakeFeature("SecondGenOnSpawn");
-	XmlNodeRef comp = tail->newChild("Components");
 	string childName = string(component.GetName()) + "_tail";
-	AddValue(comp, "Element", childName);
-	AddFeature(component, tail);
-
 	IParticleComponent* child = AddComponent(newEffect, childName);
+	child->SetParent(&component);
+
+	AddFeature(*child, MakeFeature("ChildOnBirth"), true);
 
 	// Spawn TailSteps particles continuously
 	XmlNodeRef spawn = MakeFeature("SpawnCount");
 	ConvertValueParam(spawn, "Amount", params.fTailLength.nTailSteps);
-	{
-		XmlNodeRef delay = spawn->newChild("Duration");
-		delay->newChild("State")->setAttr("value", "false");
-	}
+	AddValue(spawn->newChild("Duration"), "value", gInfinity);
+
 	AddFeature(*child, spawn);
 
 	XmlNodeRef life = MakeFeature("LifeTime");
@@ -1068,8 +1066,7 @@ void ConvertParamsToFeatures(IParticleComponent& component, const ParticleParams
 	// Convert params to features, resetting params as we do.
 	// Any non-default params afterwards have not been converted.
 	ConvertConfigSpec(component, params);
-	if (parent)
-		ConvertChild(*parent, component, params);
+	ConvertChild(component, params);
 	ConvertSpawn(component, params);
 	if (!ConvertTail(component, params, newEffect))
 	{
@@ -1114,6 +1111,7 @@ void ConvertSubEffects(IParticleEffectPfx2& newEffect, const ::IParticleEffect& 
 			name = base + 1;
 		}
 		component = AddComponent(newEffect, name);
+		component->SetParent(parent);
 
 		ConvertParamsToFeatures(*component, oldSubEffect.GetParticleParams(), newEffect, parent);
 	}
@@ -1139,15 +1137,16 @@ PParticleEffect CParticleSystem::ConvertEffect(const ::IParticleEffect* pOldEffe
 	string oldName = pOldEffect->GetFullName();
 	string newName = ConvertPfx1Name(oldName);
 	PParticleEffect pNewEffect = FindEffect(newName, !bReplace);
-	if (pNewEffect)
+	if (pNewEffect && !bReplace)
 		return pNewEffect;
 
 	pNewEffect = CreateEffect();
 	RenameEffect(pNewEffect, newName);
-	gEnv->pLog->Log("PFX1 to PFX2 \"%s\":", oldName.c_str());
+	CryLog("PFX1 to PFX2 \"%s\":", oldName.c_str());
+	non_const(pOldEffect)->LoadResources();
 	ConvertSubEffects(*pNewEffect, *pOldEffect);
 
-	gEnv->pLog->Log(" - Saving as \"%s\":", newName.c_str());
+	CryLog(" - Saving as \"%s\":", newName.c_str());
 	gEnv->pCryPak->MakeDir(PathUtil::GetParentDirectory(newName).c_str());
 	Serialization::SaveJsonFile(newName, *pNewEffect);
 
@@ -1155,3 +1154,125 @@ PParticleEffect CParticleSystem::ConvertEffect(const ::IParticleEffect* pOldEffe
 }
 
 }
+
+#if 0
+///////////////////////////////////////////////////////////////////////////////
+// A subset of ParticleParams, listing parameters which are not yet converted
+struct ParticleParamsUnconverted
+{
+	// HIGH PRIORITY
+
+	enum EFacing {                                  // Not all facing combinations supported. For geometry, ONLY Free. 
+		CameraX,                                    // NO for sprites, NO for ribbons, NO for geometry
+		Horizontal,                                 // NO for sprites, NO for ribbons
+		Water,                                      // NO for ribbons
+		Terrain                                     // NO for ribbons
+	};
+
+	TSmallBool             bTessellation;           //!< If hardware supports, tessellate particles for better shadowing and curved connected particles.
+
+	struct STargetAttraction
+	{
+		enum ETargeting {
+			External,
+			OwnEmitter,
+			Ignore
+		}                   eTarget;                //!< Source of target attractor.
+		TSmallBool          bExtendSpeed;           //!< Extend particle speed as necessary to reach target in normal lifetime.
+		TSmallBool          bShrink;                //!< Shrink particle as it approaches target.
+		TSmallBool          bOrbit;                 //!< Orbit target at specified distance, rather than disappearing.
+		TVarEPParam<SFloat> fRadius;                //!< Radius of attractor, for vanishing or orbiting.
+	}                      TargetAttraction;        //!< Specify target attractor behavior.
+
+	enum EForce {
+		None,
+		Wind,
+		Gravity
+	}                      eForceGeneration;        //!< Generate physical forces if set.
+
+	// MEDIUM PRIORITY
+
+	TSmallBool             bEnabled = true;         // Only enabled sub-effects are converted
+
+	struct SMaintainDensity : UFloat
+	{
+		UFloat fReduceLifeTime;
+		UFloat fReduceAlpha;                        //!< <SoftMax=1> Reduce alpha inversely to count increase.
+		UFloat fReduceSize;
+	} fMaintainDensity;                             //!< <SoftMax=1> Increase count when emitter moves to maintain spatial density.
+	TSmallBool             bRemainWhileVisible;     //!< Particles will only die when not rendered (by any viewport).
+
+	UnitFloat              fOffsetRoundness;        // ONLY 0 (cube) or 1 (sphere)
+	UnitFloat              fOffsetInnerFraction;    //!< Fraction of inner emit volume to avoid
+
+	TVarEParam<UHalfAngle> fFocusAngle;             // APPROX
+	TVarEParam<SFloat>     fFocusAzimuth;           // APPROX
+	TVarEParam<UnitFloat>  fFocusCameraDir;         //!< Rotate emitter focus partially or fully to face camera.
+	TSmallBool             bFocusGravityDir;        //!< Uses negative gravity dir, rather than emitter Y, as focus dir.
+	TSmallBool             bEmitOffsetDir;          //!< Default emission direction parallel to emission offset from origin.
+
+	TVarEPParam<UFloat>    fAspect = 1;             // BASE only
+	TVarEPParam<SFloat>    fPivotX;                 // BASE only
+	TVarEPParam<SFloat>    fPivotY;                 // BASE only
+
+	struct SStretch : TVarEPParam<UFloat>
+	{
+		SFloat fOffsetRatio;
+	}                         fStretch;             // BASE only
+
+	UnitFloat8                fCollisionFraction;   //!< Fraction of emitted particles that actually perform collisions.
+
+	TSmallBool                bVolumeFog;           //!< Use as a participating media of volumetric fog.
+	Unit4Float                fVolumeThickness = 1; //!< Thickness factor for particle size.
+
+	TRangedType<uint8, 0, 2>  nSortQuality;         //!< Sort new particles as accurately as possible into list, by main camera distance.
+	SFloat                    fSortBoundsScale;     //!< <SoftMin=-1> <SoftMax=1> Choose emitter point for sorting; 1 = bounds nearest, 0 = origin, -1 = bounds farthest.
+
+	UFloat                    fFillRateCost = 1;    //!< Adjustment to max screen fill allowed per emitter.
+
+
+	// LOW PRIORITY
+
+	enum EInheritance {
+		System,
+		Standard,
+		Parent
+	}                      eInheritance;            //!< Source of ParticleParams used as base for this effect (for serialization, display, etc).
+
+	TSmallBool             bFocusRotatesEmitter;    //!< Focus rotation affects offset and particle orientation; else affects just emission direction.
+
+	UFloat                 fPlaneAlignBlendDistance;//!< Distance when blend to camera plane aligned particles starts.
+
+	struct STextureTiling
+	{
+		UnitFloat8     fFlipChance;                 //!< Chance each particle will flip in X direction.
+		TCurve<UFloat> fAnimCurve;                  //!< Animation curve.
+	};
+	TSmallBool             bOctagonalShape;         //!< Use octagonal shape for textures instead of quad.
+
+	TVarEParam<UFloat>     fSoundFXParam = 1;       // NO ability to take RTPC param name from SpawnParams
+
+	struct SConnection
+	{
+		TSmallBool bTextureMirror;                  //!< Mirror alternating texture tiles; else wrap.
+	};
+
+	struct SMoveRelativeEmitter
+	{
+		TSmallBool  bIgnoreSize;                    // ALWAYS
+		TSmallBool  bMoveTail;                      // ALWAYS
+	};
+
+	UFloat                 fCollisionCutoffDistance;//!< Maximum distance up until collisions are respected (0 = infinite).
+	UFloat                 fThickness = 1;          // YES: Particle Physics, Decal thickness; NO Geometry Z scale, 
+
+	SFloat                 fSortOffset;             // YES Decal offset, APPROX general offset; NO Geometry dist
+	UnitFloat              fFadeAtViewCosAngle;     //!< Angle to camera at which particles start to fade out.
+
+	TFixed<uint8, MAX_HEATSCALE> fHeatScale;        //!< Multiplier to thermal vision.
+
+	TSmallBool             bForceDynamicBounds;     //!< Always update particles and compute actual bounds for visibility.
+	TSmallBool             bHalfRes;                //!< Use half resolution rendering.
+	TSmallBoolTrue         bStreamable;             //!< Texture/geometry allowed to be streamed.
+};
+#endif

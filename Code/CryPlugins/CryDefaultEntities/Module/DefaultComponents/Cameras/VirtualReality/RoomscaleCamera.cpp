@@ -51,18 +51,33 @@ namespace Cry
 				if (event.event == ENTITY_EVENT_UPDATE)
 				{
 					const CCamera& systemCamera = gEnv->pSystem->GetViewCamera();
+					float fov = (75.0_degrees).ToRadians();
 
-					if (IHmdDevice* pDevice = gEnv->pSystem->GetHmdManager()->GetHmdDevice())
+					bool camera_matrix_initialized_with_hmd = false;
+					IHmdManager* pHmdManager = gEnv->pSystem->GetHmdManager();
+					if (pHmdManager && pHmdManager->IsStereoSetupOk())
 					{
-						const HmdTrackingState& state = pDevice->GetLocalTrackingState();
-						m_camera.SetMatrix(m_pEntity->GetWorldTM() * Matrix34::Create(Vec3(1.f), state.pose.orientation, state.pose.position));
+						if (IHmdDevice* pDevice = pHmdManager->GetHmdDevice())
+						{
+							float arf_notUsed;
+							pDevice->GetCameraSetupInfo(fov, arf_notUsed);
+
+							const auto& worldTranform = m_pEntity->GetWorldTM();
+							pDevice->EnableLateCameraInjectionForCurrentFrame(std::make_pair(Quat(worldTranform), worldTranform.GetTranslation()));
+
+							const HmdTrackingState& state = pDevice->GetLocalTrackingState();
+							m_camera.SetMatrix(worldTranform * Matrix34::Create(Vec3(1.f), state.pose.orientation, state.pose.position));
+
+							camera_matrix_initialized_with_hmd = true;
+						}
 					}
-					else
+
+					if (!camera_matrix_initialized_with_hmd)
 					{
 						m_camera.SetMatrix(m_pEntity->GetWorldTM() * Matrix34::Create(Vec3(1.f), IDENTITY, m_pEntity->GetWorldRotation().GetInverted() * Vec3(0, 0, 1.7f)));
 					}
 
-					m_camera.SetFrustum(systemCamera.GetViewSurfaceX(), systemCamera.GetViewSurfaceZ(), (75.0_degrees).ToRadians(), m_nearPlane, m_farPlane, systemCamera.GetPixelAspectRatio());
+					m_camera.SetFrustum(systemCamera.GetViewSurfaceX(), systemCamera.GetViewSurfaceZ(), fov, m_nearPlane, m_farPlane, systemCamera.GetPixelAspectRatio());
 
 					gEnv->pSystem->SetViewCamera(m_camera);
 				}
@@ -73,13 +88,6 @@ namespace Cry
 						Activate();
 					}
 				}
-			}
-
-			bool CRoomscaleCameraComponent::OnAsyncCameraCallback(const HmdTrackingState& sensorState, IHmdDevice::AsyncCameraContext& context)
-			{
-				context.outputCameraMatrix = m_pEntity->GetWorldTM() * Matrix34::Create(Vec3(1.f), sensorState.pose.orientation, sensorState.pose.position);
-
-				return true;
 			}
 
 			uint64 CRoomscaleCameraComponent::GetEventMask() const
@@ -93,11 +101,6 @@ namespace Cry
 			void CRoomscaleCameraComponent::OnShutDown()
 			{
 				m_pCameraManager->RemoveCamera(this);
-
-				if (IHmdDevice* pDevice = gEnv->pSystem->GetHmdManager()->GetHmdDevice())
-				{
-					pDevice->SetAsyncCameraCallback(nullptr);
-				}
 			}
 
 #ifndef RELEASE

@@ -11,20 +11,15 @@ class CNetEntity;
 static std::set<CNetEntity*> g_updateSchedulingProfile;
 static CryCriticalSection g_updateSchedulingProfileCritSec;
 
-CNetEntity::CNetEntity(CEntity* entity_)
-	: m_pEntity(entity_)
-	, m_channelId(0)
-	, m_enabledAspects(NET_ASPECT_ALL)
-	, m_delegatableAspects(NET_ASPECT_ALL)
+CNetEntity::CNetEntity(CEntity* pEntity, const SEntitySpawnParams& params)
+	: m_pEntity(pEntity)
 	, m_isBoundToNetwork(false)
 	, m_bNoSyncPhysics(false)
-	, m_pProfileManager(0)
-	, m_cachedParentId(0)
-	, m_schedulingProfiles(gEnv->pGameFramework->GetEntitySchedulerProfiles(entity_))
 	, m_hasAuthority(false)
+	, m_schedulingProfiles(gEnv->pGameFramework->GetEntitySchedulerProfiles(pEntity))
+	, m_pSpawnSerializer(params.pSpawnSerializer)
 {
-	for (int i = 0; i < NUM_ASPECTS; i++)
-		m_profiles[i] = 255;
+	m_profiles.fill(255);
 };
 
 CNetEntity::~CNetEntity()
@@ -68,10 +63,10 @@ NetworkAspectType CNetEntity::CombineAspects()
 	  eEA_GameServerE;
 
 	NetworkAspectType aspects = 0;
-	m_pEntity->m_components.ForEach([&aspects](const SEntityComponentRecord& componentRecord) -> bool
+	m_pEntity->m_components.NonRecursiveForEach([&aspects](const SEntityComponentRecord& componentRecord) -> EComponentIterationResult
 	{
 		aspects |= componentRecord.pComponent->GetNetSerializeAspectMask();
-		return true;
+		return EComponentIterationResult::Continue;
 	});
 	aspects &= gameObjectAspects;
 
@@ -180,10 +175,10 @@ bool CNetEntity::HasProfileManager()
 
 bool CNetEntity::NetSerializeEntity(TSerialize ser, EEntityAspects aspect, uint8 profile, int flags)
 {
-	m_pEntity->m_components.ForEach([&](const SEntityComponentRecord& componentRecord) -> bool
+	m_pEntity->m_components.ForEach([&ser, aspect, profile, flags](const SEntityComponentRecord& componentRecord) -> EComponentIterationResult
 	{
 		componentRecord.pComponent->NetSerialize(ser, aspect, profile, flags);
-		return true;
+		return EComponentIterationResult::Continue;
 	});
 
 	// #netentity: compare to GameContext::SynchObject, physics aspect. what happens there and here?
@@ -405,6 +400,24 @@ void CNetEntity::OnNetworkedEntityTransformChanged(EntityTransformationFlagsMask
 		m_pNetContext->ChangedTransform(entId, pEntity->GetWorldPos(), pEntity->GetWorldRotation(), drawDistance);
 #endif
 	}
+}
+
+void CNetEntity::OnComponentAddedDuringInitialization(IEntityComponent* pComponent) const
+{
+	if (m_pSpawnSerializer == nullptr)
+		return;
+
+	const bool isNetworked = !pComponent->GetComponentFlags().CheckAny({ EEntityComponentFlags::ServerOnly, EEntityComponentFlags::ClientOnly, EEntityComponentFlags::NetNotReplicate });
+	if (isNetworked)
+	{
+		pComponent->NetReplicateSerialize(*m_pSpawnSerializer);
+	}
+}
+
+void CNetEntity::OnEntityInitialized()
+{
+	// Spawn serializer will be released after entity initialization
+	m_pSpawnSerializer = nullptr;
 }
 
 /* static */ void CNetEntity::UpdateSchedulingProfiles()

@@ -2,9 +2,11 @@
 
 #pragma once
 
-#include <IImplItem.h>
+#include <IItem.h>
 
 namespace ACE
+{
+namespace Impl
 {
 namespace Wwise
 {
@@ -24,17 +26,7 @@ enum class EItemType
 	PhysicalFolder,
 };
 
-enum class EItemFlags
-{
-	None          = 0,
-	IsPlaceHolder = BIT(0),
-	IsLocalized   = BIT(1),
-	IsConnected   = BIT(2),
-	IsContainer   = BIT(3),
-};
-CRY_CREATE_ENUM_FLAG_OPERATORS(EItemFlags);
-
-class CItem final : public IImplItem
+class CItem final : public IItem
 {
 public:
 
@@ -43,11 +35,13 @@ public:
 	  ControlId const id,
 	  EItemType const type,
 	  EItemFlags const flags = EItemFlags::None,
+	  EPakStatus const pakStatus = EPakStatus::None,
 	  string const& filePath = "")
 		: m_name(name)
 		, m_id(id)
 		, m_type(type)
 		, m_flags(flags)
+		, m_pakStatus(pakStatus)
 		, m_filePath(filePath)
 		, m_pParent(nullptr)
 		, m_radius(0.0f)
@@ -57,33 +51,26 @@ public:
 
 	CItem() = delete;
 
-	// IImplItem
+	// IItem
 	virtual ControlId     GetId() const override                        { return m_id; }
-
-	virtual string        GetName() const override                      { return m_name; }
-	virtual string const& GetFilePath() const override                  { return m_filePath; }
+	virtual string const& GetName() const override                      { return m_name; }
 	virtual float         GetRadius() const override                    { return m_radius; }
-	virtual int           GetSortPriority() const override              { return static_cast<int>(m_type); }
-
 	virtual size_t        GetNumChildren() const override               { return m_children.size(); }
-	virtual IImplItem*    GetChildAt(size_t const index) const override { return m_children[index]; }
-	virtual IImplItem*    GetParent() const override                    { return m_pParent; }
+	virtual IItem*        GetChildAt(size_t const index) const override { return m_children[index]; }
+	virtual IItem*        GetParent() const override                    { return m_pParent; }
+	virtual EItemFlags    GetFlags() const override                     { return m_flags; }
+	// ~IItem
 
-	virtual bool          IsPlaceholder() const override                { return (m_flags& EItemFlags::IsPlaceHolder) != 0; }
-	virtual bool          IsLocalized() const override                  { return (m_flags& EItemFlags::IsLocalized) != 0; }
-	virtual bool          IsConnected() const override                  { return (m_flags& EItemFlags::IsConnected) != 0; }
-	virtual bool          IsContainer() const override                  { return (m_flags& EItemFlags::IsContainer) != 0; }
-	// ~IImplItem
+	EItemType     GetType() const                  { return m_type; }
+	string const& GetFilePath() const              { return m_filePath; }
+	EPakStatus    GetPakStatus() const             { return m_pakStatus; }
 
-	EItemType GetType() const { return m_type; }
+	void          SetFlags(EItemFlags const flags) { m_flags = flags; }
+	void          SetRadius(float const radius)    { m_radius = radius; }
 
-	void      SetConnected(bool const isConnected);
-	void      SetRadius(float const radius) { m_radius = radius; }
-
-	void      AddChild(CItem* const pChild);
-	void      RemoveChild(CItem* const pChild);
-
-	void      Clear();
+	void          AddChild(CItem* const pChild);
+	void          RemoveChild(CItem* const pChild);
+	void          Clear();
 
 private:
 
@@ -93,6 +80,7 @@ private:
 	EItemType const     m_type;
 	string const        m_name;
 	string const        m_filePath;
+	EPakStatus const    m_pakStatus;
 	std::vector<CItem*> m_children;
 	CItem*              m_pParent;
 	float               m_radius;
@@ -101,5 +89,6 @@ private:
 
 using ItemCache = std::map<ControlId, CItem*>;
 } // namespace Wwise
+} // namespace Impl
 } // namespace ACE
 

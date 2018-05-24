@@ -3,16 +3,15 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
 
 namespace CryEngine.Serialization
 {
-	public class ObjectReader
+	internal class ObjectReader
 	{
-		public ObjectReader(Stream stream)
+		internal ObjectReader(Stream stream)
 		{
 			stream.Seek(0, SeekOrigin.Begin);
 
@@ -21,14 +20,15 @@ namespace CryEngine.Serialization
 			PopulateGuidLookup();
 		}
 
-		BinaryReader Reader { get; set; }
-		FormatterConverter Converter { get; set; }
+		private BinaryReader Reader { get; set; }
+		private FormatterConverter Converter { get; set; }
 
-		Dictionary<Type, Dictionary<int, object>> _typeObjects = new Dictionary<Type, Dictionary<int, object>>();
-		Dictionary<string, Type> _guidLookup = new Dictionary<string, Type>();
+		private Dictionary<Type, Dictionary<int, object>> _typeObjects = new Dictionary<Type, Dictionary<int, object>>();
+		private Dictionary<string, Type> _guidLookup = new Dictionary<string, Type>();
 
-		Type _deserializationCallbackType = typeof(IDeserializationCallback);
-		MethodInfo _deserializationMethod = typeof(IDeserializationCallback).GetMethod("OnDeserialization", BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly);
+		private Type _deserializationCallbackType = typeof(IDeserializationCallback);
+		private MethodInfo _deserializationMethod = typeof(IDeserializationCallback).GetMethod(nameof(IDeserializationCallback.OnDeserialization), BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly);
+		private Type _entityComponentType = typeof(EntityComponent);
 
 		private void PopulateGuidLookup()
 		{
@@ -52,7 +52,12 @@ namespace CryEngine.Serialization
 			}
 		}
 
-		public object Read()
+		internal object Read()
+		{
+			return ReadInternal();
+		}
+
+		private object ReadInternal(object existingObject = null, bool isConstructed = false)
 		{
 			var objectType = (SerializedObjectType)Reader.ReadByte();
 
@@ -95,7 +100,7 @@ namespace CryEngine.Serialization
 				case SerializedObjectType.Reference:
 					return ReadReference();
 				case SerializedObjectType.Object:
-					return ReadObject();
+					return ReadObject(existingObject, isConstructed);
 				case SerializedObjectType.Array:
 					return ReadArray();
 				case SerializedObjectType.Assembly:
@@ -115,7 +120,7 @@ namespace CryEngine.Serialization
 			throw new ArgumentException("Tried to deserialize unknown object type!");
 		}
 
-		public void ReadStatics()
+		internal void ReadStatics()
 		{
 			var numTypes = Reader.ReadInt32();
 
@@ -130,11 +135,11 @@ namespace CryEngine.Serialization
 
 				var type = ReadType();
 
-				ReadObjectBaseTypeMembers(null, type, fieldFlags);
+				ReadObjectBaseTypeMembers(null, type, fieldFlags, false);
 			}
 		}
 
-		object ReadEnum()
+		private object ReadEnum()
 		{
 			var type = ReadType();
 			var value = Read();
@@ -142,7 +147,7 @@ namespace CryEngine.Serialization
 			return Enum.ToObject(type, value);
 		}
 
-		object ReadReference()
+		private object ReadReference()
 		{
 			var referenceId = Reader.ReadInt32();
 			var type = ReadType();
@@ -159,7 +164,7 @@ namespace CryEngine.Serialization
 			return null;
 		}
 
-		void AddReference(Type type, object obj, int referenceId)
+		private void AddReference(Type type, object obj, int referenceId)
 		{
 			Dictionary<int, object> objects;
 			if(!_typeObjects.TryGetValue(type, out objects))
@@ -172,51 +177,56 @@ namespace CryEngine.Serialization
 		}
 
 		#region Reference types
-		object ReadEntityComponent()
+		private object ReadEntityComponent()
 		{
 			var referenceId = Reader.ReadInt32();
 			var componentTypeGuid = (EntityComponent.GUID)Read();
 
 			var type = EntityComponent.GetComponentTypeByGUID(componentTypeGuid);
-			var obj = type != null ? FormatterServices.GetUninitializedObject(type) : null;
+
+			var obj = type != null ? Activator.CreateInstance(type) : null;
 			if(type != null)
 			{
 				AddReference(type, obj, referenceId);
 			}
 
-			ReadObjectMembers(obj, type);
+			ReadObjectMembers(obj, type, true);
 
 			return obj;
 		}
 
-		object ReadObject()
+		private object ReadObject(object existingObject, bool isConstructed)
 		{
 			var referenceId = Reader.ReadInt32();
 			var type = ReadType();
 
-			var obj = type != null ? FormatterServices.GetUninitializedObject(type) : null;
-			if(type != null)
+			if(existingObject == null && type != null)
 			{
-				AddReference(type, obj, referenceId);
+				existingObject = FormatterServices.GetUninitializedObject(type);
 			}
 
-			ReadObjectMembers(obj, type);
+			if(type != null)
+			{
+				AddReference(type, existingObject, referenceId);
+			}
 
-			return obj;
+			ReadObjectMembers(existingObject, type, isConstructed);
+
+			return existingObject;
 		}
 
-		void ReadObjectMembers(object obj, Type type)
+		private void ReadObjectMembers(object obj, Type type, bool isConstructed)
 		{
 			var numBaseTypes = Reader.ReadInt32();
 			var fieldFlags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly;
 
-			ReadObjectBaseTypeMembers(obj, type, fieldFlags);
+			ReadObjectBaseTypeMembers(obj, type, fieldFlags, isConstructed);
 
 			for(var i = 0; i < numBaseTypes; i++)
 			{
 				var baseType = ReadType();
 
-				ReadObjectBaseTypeMembers(obj, baseType, fieldFlags);
+				ReadObjectBaseTypeMembers(obj, baseType, fieldFlags, isConstructed);
 			}
 
 			if(_deserializationCallbackType.IsAssignableFrom(type))
@@ -225,18 +235,54 @@ namespace CryEngine.Serialization
 			}
 		}
 
-		void ReadObjectBaseTypeMembers(object obj, Type objectType, BindingFlags flags)
+		private void ReadObjectBaseTypeMembers(object obj, Type objectType, BindingFlags flags, bool setSerializedFieldsOnly)
 		{
 			var numFields = Reader.ReadInt32();
+			var typeChanged = obj == null ? false : !objectType.IsAssignableFrom(obj.GetType());
 			for(var iField = 0; iField < numFields; iField++)
 			{
 				var fieldName = Reader.ReadString();
-				var fieldValue = Read();
+				var fieldInfo = objectType?.GetField(fieldName, flags);
 
-				if(objectType != null)
+				var canWrite = !typeChanged // Writing a new type is not possible.
+					&& fieldInfo != null // Can't write to non-existing field.
+					&& !fieldInfo.IsLiteral // Can't write to const objects
+					&& (obj == null) == fieldInfo.IsStatic; // If the object is null it can't be written, unless the field is static.
+
+				var existingObject = canWrite ? fieldInfo.GetValue(obj) : null;
+				var fieldValue = ReadInternal(existingObject, false);
+
+				if(canWrite)
 				{
-					var fieldInfo = objectType.GetField(fieldName, flags);
-					if(fieldInfo != null && !fieldInfo.IsLiteral && (obj == null) == fieldInfo.IsStatic)
+					if(setSerializedFieldsOnly)
+					{
+						// Check if the field is a backing field for a property.
+						if(!fieldInfo.IsDefined(objectType, false))
+						{
+							// Extract the property's name from the backing field's name.
+							// Backing fields are in the format "<NameOfProperty>k_backingfield".
+							int charIndex = fieldName.IndexOf('>');
+							if(charIndex < 1)
+							{
+								continue;
+							}
+							var propertyName = fieldName.Substring(1, fieldName.IndexOf('>') - 1);
+							var propertyInfo = objectType.GetProperty(propertyName, flags);
+							if(propertyInfo == null)
+							{
+								continue;
+							}
+
+							var isEntityProperty = propertyInfo.GetCustomAttributes(typeof(EntityPropertyAttribute), false).Length != 0;
+
+							// Always write to EntityComponents, otherwise the Entity property will be null.
+							if(isEntityProperty || objectType == _entityComponentType)
+							{
+								fieldInfo.SetValue(obj, fieldValue);
+							}
+						}
+					}
+					else
 					{
 						fieldInfo.SetValue(obj, fieldValue);
 					}
@@ -314,7 +360,7 @@ namespace CryEngine.Serialization
 			}
 		}
 
-		object ReadString()
+		private object ReadString()
 		{
 			var referenceId = Reader.ReadInt32();
 			var stringValue = Reader.ReadString();
@@ -324,7 +370,7 @@ namespace CryEngine.Serialization
 			return stringValue;
 		}
 
-		object ReadArray()
+		private object ReadArray()
 		{
 			var referenceId = Reader.ReadInt32();
 
@@ -343,7 +389,7 @@ namespace CryEngine.Serialization
 			return array;
 		}
 
-		object ReadMemberInfo()
+		private object ReadMemberInfo()
 		{
 			var referenceId = Reader.ReadInt32();
 
@@ -368,22 +414,26 @@ namespace CryEngine.Serialization
 			switch(memberType)
 			{
 				case MemberTypes.Method:
-					{
-						var parameterCount = Reader.ReadInt32();
-						var parameters = new Type[parameterCount];
+				{
+					var parameterCount = Reader.ReadInt32();
+					var parameters = new Type[parameterCount];
 
-						for(int i = 0; i < parameterCount; i++)
-							parameters[i] = ReadType();
+					for(int i = 0; i < parameterCount; i++)
+						parameters[i] = ReadType();
 
-						memberInfo = declaringType.GetMethod(memberName, bindingFlags, null, parameters, null);
-					}
+					memberInfo = declaringType.GetMethod(memberName, bindingFlags, null, parameters, null);
 					break;
+				}
 				case MemberTypes.Field:
+				{
 					memberInfo = declaringType.GetField(memberName, bindingFlags);
 					break;
+				}
 				case MemberTypes.Property:
+				{
 					memberInfo = declaringType.GetProperty(memberName, bindingFlags);
 					break;
+				}
 			}
 
 			AddReference(memberInfo.GetType(), memberInfo, referenceId);
@@ -391,7 +441,7 @@ namespace CryEngine.Serialization
 			return memberInfo;
 		}
 
-		object ReadISerializable()
+		private object ReadISerializable()
 		{
 			var referenceId = Reader.ReadInt32();
 			var type = ReadType();
@@ -424,7 +474,7 @@ namespace CryEngine.Serialization
 			return obj;
 		}
 
-		Type ReadTypeWithReference()
+		private Type ReadTypeWithReference()
 		{
 			var referenceId = Reader.ReadInt32();
 			var type = ReadType();
@@ -439,7 +489,7 @@ namespace CryEngine.Serialization
 			return type;
 		}
 
-		Type ReadType()
+		private Type ReadType()
 		{
 			Type type = null;
 			if(Reader.ReadBoolean())
@@ -486,7 +536,7 @@ namespace CryEngine.Serialization
 			return type;
 		}
 
-		Type GetType(string typeName)
+		private Type GetType(string typeName)
 		{
 			if(typeName == null)
 			{
@@ -512,7 +562,7 @@ namespace CryEngine.Serialization
 			return null;
 		}
 
-		Assembly ReadAssembly()
+		private Assembly ReadAssembly()
 		{
 			var referenceId = Reader.ReadInt32();
 			var assembly = Assembly.LoadFrom(Reader.ReadString());

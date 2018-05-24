@@ -204,8 +204,8 @@ void CVars::Init()
 	                   " c = disable clipping against water and vis area bounds"
 	                   " z = freeze particle system"
 	                   " t = used by developers to debug test algorithms");
-	REGISTER_CVAR(e_ParticlesThread, 1, VF_BITFIELD,
-	              "Enable particle threading");
+	REGISTER_CVAR(e_ParticlesThread, 4, VF_BITFIELD,
+	              "Enable particle threading: 1 = basic, 4 = optimal");
 	REGISTER_CVAR(e_ParticlesObjectCollisions, 2, VF_NULL,
 	              "Enable particle/object collisions for SimpleCollision:\n"
 	              "  1 = against static objects only, 2 = dynamic also");
@@ -875,8 +875,6 @@ void CVars::Init()
 	              "Min illuminance to determine light effect radius");
 	REGISTER_CVAR(e_ViewDistRatioCustom, 60.0f, VF_NULL | VF_LIVE_CREATE_SYNCED,
 	              "View distance ratio for special marked objects (Players,AI,Vehicles)");
-	REGISTER_CVAR(e_ViewDistRatio3Planar, 0.5f, VF_NULL,
-	              "If not 0 - adjusts object max view distance depending on the area of visible AABB sides, values between 0 to 1 control how strong this effect is applied");
 	REGISTER_CVAR(e_ViewDistMin, 0.0f, VF_NULL | VF_LIVE_CREATE_SYNCED,
 	              "Min distance on what far objects will be culled out");
 	REGISTER_CVAR(e_LodMin, 0, VF_NULL,
@@ -935,19 +933,19 @@ void CVars::Init()
 	                   "Make screenshot combined up of multiple rendered frames\n"
 	                   "(negative values for multiple frames, positive for a a single frame)\n"
 	                   " 1 highres\n"
-	                   " 2 360 degree panorama\n"
+					   " 2 360 degree panorama (not supported)\n"
 	                   " 3 Map top-down view\n"
 	                   "\n"
 	                   "see:\n"
 	                   "  e_ScreenShotWidth, e_ScreenShotHeight, e_ScreenShotQuality, e_ScreenShotMapCenterX,\n"
 	                   "  e_ScreenShotMapCenterY, e_ScreenShotMapSize, e_ScreenShotMinSlices, e_ScreenShotDebug");
 
-	REGISTER_CVAR(e_ScreenShotWidth, 2000, VF_NULL,
+	REGISTER_CVAR(e_ScreenShotWidth, 1920, VF_NULL,
 	              "used for all type highres screenshots made by e_ScreenShot to define the\n"
-	              "width of the destination image, 2000 default");
-	REGISTER_CVAR(e_ScreenShotHeight, 1500, VF_NULL,
+	              "width of the destination image, 1920 default [1-4096]");
+	REGISTER_CVAR(e_ScreenShotHeight, 1080, VF_NULL,
 	              "used for all type highres screenshots made by e_ScreenShot to define the\n"
-	              "height of the destination image, 1500 default");
+	              "height of the destination image, 1080 default [1-4096]");
 	REGISTER_CVAR(e_ScreenShotQuality, 30, VF_NULL,
 	              "used for all type highres screenshots made by e_ScreenShot to define the quality\n"
 	              "0=fast, 10 .. 30 .. 100 = extra border in percent (soften seams), negative value to debug");
@@ -971,6 +969,9 @@ void CVars::Init()
 	              "param for the size in worldunits of area to make map screenshot, see e_ScreenShotMap\n"
 	              "defines the x position of the bottom right corner of the screenshot-area on the terrain,\n"
 	              "0.0 - 1.0 (1.0 is default)");
+	REGISTER_CVAR(e_ScreenShotMapResolution, 512, VF_NULL,
+				  "used for mini map screenshots to define the\n"
+				  "resolution of the destination image, 512 default [1-4096]");
 	REGISTER_CVAR(e_ScreenShotMapCamHeight, 4000.f, VF_NULL,
 	              "param for top-down-view screenshot creation, defining the camera height for screenshots,\n"
 	              "see e_ScreenShotMap defines the y position of the bottom right corner of the\n"

@@ -6,6 +6,7 @@
 #include "CCryVKSwapChain.hpp"
 #include "../../API/VKInstance.hpp"
 
+
 CCryVKGIFactory* CCryVKGIFactory::Create()
 {
 	return new CCryVKGIFactory;

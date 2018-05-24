@@ -9,29 +9,29 @@ using System.Runtime.Serialization;
 
 namespace CryEngine.Serialization
 {
-	public class ObjectWriter
+	internal class ObjectWriter
 	{
-		public ObjectWriter(Stream stream)
+		internal ObjectWriter(Stream stream)
 		{
 			Writer = new BinaryWriter(stream);
 
 			Converter = new FormatterConverter();
 		}
 
-		Dictionary<Type, CachedTypeInfo> _typeCache = new Dictionary<Type, CachedTypeInfo>();
+		private Dictionary<Type, CachedTypeInfo> _typeCache = new Dictionary<Type, CachedTypeInfo>();
 
-		BinaryWriter Writer { get; set; }
+		private BinaryWriter Writer { get; set; }
 
-		FormatterConverter Converter { get; set; }
+		private FormatterConverter Converter { get; set; }
 
-		public void Write(object obj)
+		internal void Write(object obj)
 		{
 			WriteInstance(obj);
 
 			Writer.Flush();
 		}
 
-		public void WriteStatics(Assembly assembly)
+		internal void WriteStatics(Assembly assembly)
 		{
 			if(assembly != null)
 			{
@@ -61,7 +61,7 @@ namespace CryEngine.Serialization
 			Writer.Flush();
 		}
 
-		void WriteInstance(object obj)
+		private void WriteInstance(object obj)
 		{
 			if(obj == null)
 			{
@@ -71,157 +71,156 @@ namespace CryEngine.Serialization
 
 			var cachedTypeInfo = GetTypeInfo(obj.GetType());
 
-			if(cachedTypeInfo._serializedType == SerializedObjectType.Boolean)
+			if(cachedTypeInfo.SerializedType == SerializedObjectType.Boolean)
 			{
 				Writer.Write((byte)SerializedObjectType.Boolean);
 				Writer.Write((bool)obj);
 			}
-			else if(cachedTypeInfo._serializedType == SerializedObjectType.Char)
+			else if(cachedTypeInfo.SerializedType == SerializedObjectType.Char)
 			{
 				Writer.Write((byte)SerializedObjectType.Char);
 				Writer.Write((char)obj);
 			}
-			else if(cachedTypeInfo._serializedType == SerializedObjectType.SByte)
+			else if(cachedTypeInfo.SerializedType == SerializedObjectType.SByte)
 			{
 				Writer.Write((byte)SerializedObjectType.SByte);
 				Writer.Write((sbyte)obj);
 			}
-			else if(cachedTypeInfo._serializedType == SerializedObjectType.Byte)
+			else if(cachedTypeInfo.SerializedType == SerializedObjectType.Byte)
 			{
 				Writer.Write((byte)SerializedObjectType.Byte);
 				Writer.Write((byte)obj);
 			}
-			else if(cachedTypeInfo._serializedType == SerializedObjectType.Int16)
+			else if(cachedTypeInfo.SerializedType == SerializedObjectType.Int16)
 			{
 				Writer.Write((byte)SerializedObjectType.Int16);
 				Writer.Write((short)obj);
 			}
-			else if(cachedTypeInfo._serializedType == SerializedObjectType.UInt16)
+			else if(cachedTypeInfo.SerializedType == SerializedObjectType.UInt16)
 			{
 				Writer.Write((byte)SerializedObjectType.UInt16);
 				Writer.Write((ushort)obj);
 			}
-			else if(cachedTypeInfo._serializedType == SerializedObjectType.Int32)
+			else if(cachedTypeInfo.SerializedType == SerializedObjectType.Int32)
 			{
 				Writer.Write((byte)SerializedObjectType.Int32);
 				Writer.Write((int)obj);
 			}
-			else if(cachedTypeInfo._serializedType == SerializedObjectType.UInt32)
+			else if(cachedTypeInfo.SerializedType == SerializedObjectType.UInt32)
 			{
 				Writer.Write((byte)SerializedObjectType.UInt32);
 				Writer.Write((uint)obj);
 			}
-			else if(cachedTypeInfo._serializedType == SerializedObjectType.Int64)
+			else if(cachedTypeInfo.SerializedType == SerializedObjectType.Int64)
 			{
 				Writer.Write((byte)SerializedObjectType.Int64);
 				Writer.Write((long)obj);
 			}
-			else if(cachedTypeInfo._serializedType == SerializedObjectType.UInt64)
+			else if(cachedTypeInfo.SerializedType == SerializedObjectType.UInt64)
 			{
 				Writer.Write((byte)SerializedObjectType.UInt64);
 				Writer.Write((ulong)obj);
 			}
-			else if(cachedTypeInfo._serializedType == SerializedObjectType.Single)
+			else if(cachedTypeInfo.SerializedType == SerializedObjectType.Single)
 			{
 				Writer.Write((byte)SerializedObjectType.Single);
 				Writer.Write((float)obj);
 			}
-			else if(cachedTypeInfo._serializedType == SerializedObjectType.Double)
+			else if(cachedTypeInfo.SerializedType == SerializedObjectType.Double)
 			{
 				Writer.Write((byte)SerializedObjectType.Double);
 				Writer.Write((double)obj);
 			}
-			else if(cachedTypeInfo._serializedType == SerializedObjectType.Decimal)
+			else if(cachedTypeInfo.SerializedType == SerializedObjectType.Decimal)
 			{
 				Writer.Write((byte)SerializedObjectType.Decimal);
 				Writer.Write((decimal)obj);
 			}
-			else if(cachedTypeInfo._serializedType == SerializedObjectType.IntPtr)
+			else if(cachedTypeInfo.SerializedType == SerializedObjectType.IntPtr)
 			{
 				Writer.Write((byte)SerializedObjectType.IntPtr);
 				Writer.Write(((IntPtr)obj).ToInt64());
 			}
-			else if(cachedTypeInfo._serializedType == SerializedObjectType.UIntPtr)
+			else if(cachedTypeInfo.SerializedType == SerializedObjectType.UIntPtr)
 			{
 				Writer.Write((byte)SerializedObjectType.UIntPtr);
 				Writer.Write(((UIntPtr)obj).ToUInt64());
 			}
-			else if(cachedTypeInfo._serializedType == SerializedObjectType.Enum)
+			else if(cachedTypeInfo.SerializedType == SerializedObjectType.Enum)
 			{
 				Writer.Write((byte)SerializedObjectType.Enum);
-				WriteType(cachedTypeInfo._type);
+				WriteType(cachedTypeInfo.CachedType);
 
-				var integerType = Enum.GetUnderlyingType(cachedTypeInfo._type);
+				var integerType = Enum.GetUnderlyingType(cachedTypeInfo.CachedType);
 				WriteInstance(Convert.ChangeType(obj, integerType));
 			}
 			else
 			{
 				// Write reference types below
 				// Skip if already written
-				int referenceId;
 
-				if(cachedTypeInfo.HasWrittenReference(obj, out referenceId))
+				if(cachedTypeInfo.HasWrittenReference(obj, out int referenceId))
 				{
 					Writer.Write((byte)SerializedObjectType.Reference);
 					Writer.Write(referenceId);
-					WriteType(cachedTypeInfo._type);
+					WriteType(cachedTypeInfo.CachedType);
 				}
 				else
 				{
-					Writer.Write((byte)cachedTypeInfo._serializedType);
+					Writer.Write((byte)cachedTypeInfo.SerializedType);
 					Writer.Write(referenceId);
 
-					switch(cachedTypeInfo._serializedType)
+					switch(cachedTypeInfo.SerializedType)
 					{
 						case SerializedObjectType.Type:
-							{
-								WriteType((Type)obj);
-							}
+						{
+							WriteType((Type)obj);
 							break;
+						}
+
 						case SerializedObjectType.Assembly:
-							{
-								WriteAssembly((Assembly)obj);
-							}
+						{
+							WriteAssembly((Assembly)obj);
 							break;
+						}
 						case SerializedObjectType.String:
-							{
-								Write((string)obj);
-							}
+						{
+							Write((string)obj);
 							break;
+						}
 						case SerializedObjectType.Array:
-							{
-								WriteArray(obj, cachedTypeInfo._type);
-							}
+						{
+							WriteArray(obj, cachedTypeInfo.CachedType);
 							break;
+						}
 						case SerializedObjectType.MemberInfo:
-							{
-								WriteMemberInfo(obj);
-							}
+						{
+							WriteMemberInfo(obj);
 							break;
+						}
 						case SerializedObjectType.ISerializable:
-							{
-								WriteISerializable(obj, cachedTypeInfo._type);
-							}
+						{
+							WriteISerializable(obj, cachedTypeInfo.CachedType);
 							break;
+						}
 						case SerializedObjectType.EntityComponent:
-							{
-								WriteEntityComponent(obj, cachedTypeInfo._type);
-							}
+						{
+							WriteEntityComponent(obj, cachedTypeInfo.CachedType);
 							break;
+						}
 						case SerializedObjectType.Object:
-							{
-								WriteObject(obj, cachedTypeInfo._type);
-							}
+						{
+							WriteObject(obj, cachedTypeInfo.CachedType);
 							break;
+						}
 					}
 				}
 			}
 		}
 
-		CachedTypeInfo GetTypeInfo(Type type)
+		private CachedTypeInfo GetTypeInfo(Type type)
 		{
-			CachedTypeInfo cachedTypeInfo;
-			if(!_typeCache.TryGetValue(type, out cachedTypeInfo))
+			if(!_typeCache.TryGetValue(type, out CachedTypeInfo cachedTypeInfo))
 			{
 				cachedTypeInfo = new CachedTypeInfo(type);
 				_typeCache[type] = cachedTypeInfo;
@@ -230,7 +229,7 @@ namespace CryEngine.Serialization
 			return cachedTypeInfo;
 		}
 
-		void WriteEntityComponent(object obj, Type objectType)
+		private void WriteEntityComponent(object obj, Type objectType)
 		{
 			var componentTypeGUID = EntityComponent.GetComponentTypeGUID(objectType);
 			Write(componentTypeGUID);
@@ -238,19 +237,19 @@ namespace CryEngine.Serialization
 			WriteObjectMembers(obj, objectType);
 		}
 
-		void WriteObject(object obj, Type objectType)
+		private void WriteObject(object obj, Type objectType)
 		{
 			WriteType(objectType);
 
 			WriteObjectMembers(obj, objectType);
 		}
 
-		void WriteObjectMembers(object obj, Type objectType)
+		private void WriteObjectMembers(object obj, Type objectType)
 		{
 			var baseType = objectType.BaseType;
 			var baseTypes = new List<Type>();
 
-			while(baseType != CachedTypeInfo._objectType && baseType != null)
+			while(baseType != CachedTypeInfo.ObjectType && baseType != null)
 			{
 				baseTypes.Add(baseType);
 
@@ -269,7 +268,7 @@ namespace CryEngine.Serialization
 			}
 		}
 
-		void WriteObjectMembers(object obj, Type objectType, BindingFlags flags)
+		private void WriteObjectMembers(object obj, Type objectType, BindingFlags flags)
 		{
 			var fields = new List<FieldInfo>(objectType.GetFields(flags));
 			for(int i = fields.Count - 1; i > -1; --i)
@@ -287,7 +286,7 @@ namespace CryEngine.Serialization
 				Write(field.Name);
 				var fieldValue = field.GetValue(obj);
 
-				if(fieldValue != null && CachedTypeInfo._delegateType.IsAssignableFrom(fieldValue.GetType()))
+				if(fieldValue != null && CachedTypeInfo.DelegateType.IsAssignableFrom(fieldValue.GetType()))
 				{
 					WriteInstance(null);
 				}
@@ -336,7 +335,7 @@ namespace CryEngine.Serialization
 			}
 		}
 
-		void WriteArray(object obj, Type type)
+		private void WriteArray(object obj, Type type)
 		{
 			var array = obj as Array;
 			Writer.Write(array.Length);
@@ -349,7 +348,7 @@ namespace CryEngine.Serialization
 			}
 		}
 
-		void WriteMemberInfo(object obj)
+		private void WriteMemberInfo(object obj)
 		{
 			var memberInfo = obj as MemberInfo;
 
@@ -385,7 +384,7 @@ namespace CryEngine.Serialization
 			}
 		}
 
-		void WriteISerializable(object obj, Type type)
+		private void WriteISerializable(object obj, Type type)
 		{
 			var serializable = obj as ISerializable;
 
@@ -405,7 +404,7 @@ namespace CryEngine.Serialization
 			}
 		}
 
-		void WriteType(Type type)
+		private void WriteType(Type type)
 		{
 			Writer.Write(type.IsArray);
 			if(type.IsArray)
@@ -442,8 +441,8 @@ namespace CryEngine.Serialization
 				}
 			}
 		}
-		
-		void WriteAssembly(Assembly assembly)
+
+		private void WriteAssembly(Assembly assembly)
 		{
 			Write(assembly.Location);
 		}

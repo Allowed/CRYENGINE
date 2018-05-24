@@ -26,8 +26,8 @@ public:
 	CPropertiesWidget() = delete;
 
 	void Reset();
-	void BackupTreeViewStates();
-	void RestoreTreeViewStates();
+	void OnAboutToReload();
+	void OnReloaded();
 
 signals:
 
@@ -35,7 +35,7 @@ signals:
 
 public slots:
 
-	void OnSetSelectedAssets(std::vector<CAsset*> const& selectedAssets, bool const restoreSelection);
+	void OnSetSelectedAssets(Assets const& selectedAssets, bool const restoreSelection);
 
 private:
 

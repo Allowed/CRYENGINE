@@ -3,21 +3,21 @@
 #include "StdAfx.h"
 #include "ResourceSelectorDialog.h"
 
-#include "ResourceSelectorModel.h"
+#include "ResourceSourceModel.h"
+#include "ResourceLibraryModel.h"
+#include "ResourceFilterProxyModel.h"
 #include "AudioControlsEditorPlugin.h"
 #include "TreeView.h"
 
 #include <QtUtil.h>
 #include <QSearchBox.h>
 #include <ProxyModels/MountingProxyModel.h>
-#include <ProxyModels/DeepFilterProxyModel.h>
 
 #include <QDialogButtonBox>
 #include <QVBoxLayout>
 #include <QHeaderView>
 #include <QPushButton>
 #include <QMenu>
-#include <QModelIndex>
 #include <QKeyEvent>
 
 namespace ACE
@@ -39,7 +39,7 @@ CResourceSelectorDialog::CResourceSelectorDialog(EAssetType const type, Scope co
 	setWindowTitle("Select Audio System Control");
 
 	m_pMountingProxyModel = new CMountingProxyModel(WrapMemberFunction(this, &CResourceSelectorDialog::CreateLibraryModelFromIndex), this);
-	m_pMountingProxyModel->SetHeaderDataCallbacks(1, &ResourceModelUtils::GetHeaderData);
+	m_pMountingProxyModel->SetHeaderDataCallbacks(1, &CResourceSourceModel::GetHeaderData);
 	m_pMountingProxyModel->SetSourceModel(m_pSourceModel);
 
 	m_pFilterProxyModel->setSourceModel(m_pMountingProxyModel);
@@ -47,13 +47,13 @@ CResourceSelectorDialog::CResourceSelectorDialog(EAssetType const type, Scope co
 	m_pTreeView->setEditTriggers(QAbstractItemView::NoEditTriggers);
 	m_pTreeView->setDragEnabled(false);
 	m_pTreeView->setDragDropMode(QAbstractItemView::NoDragDrop);
-	m_pTreeView->setDefaultDropAction(Qt::IgnoreAction);
 	m_pTreeView->setSelectionMode(QAbstractItemView::SingleSelection);
 	m_pTreeView->setUniformRowHeights(true);
 	m_pTreeView->setContextMenuPolicy(Qt::CustomContextMenu);
 	m_pTreeView->setModel(m_pFilterProxyModel);
 	m_pTreeView->sortByColumn(0, Qt::AscendingOrder);
 	m_pTreeView->installEventFilter(this);
+	m_pTreeView->header()->setContextMenuPolicy(Qt::PreventContextMenu);
 
 	m_pSearchBox->SetModel(m_pFilterProxyModel);
 	m_pSearchBox->SetAutoExpandOnSearch(m_pTreeView);
@@ -70,7 +70,6 @@ CResourceSelectorDialog::CResourceSelectorDialog(EAssetType const type, Scope co
 
 	QObject::connect(m_pTreeView, &CTreeView::customContextMenuRequested, this, &CResourceSelectorDialog::OnContextMenu);
 	QObject::connect(m_pTreeView, &CTreeView::doubleClicked, this, &CResourceSelectorDialog::OnItemDoubleClicked);
-	QObject::connect(m_pTreeView->header(), &QHeaderView::sortIndicatorChanged, [&]() { m_pTreeView->scrollTo(m_pTreeView->currentIndex()); });
 	QObject::connect(m_pTreeView->selectionModel(), &QItemSelectionModel::selectionChanged, this, &CResourceSelectorDialog::OnUpdateSelectedControl);
 	QObject::connect(m_pTreeView->selectionModel(), &QItemSelectionModel::currentChanged, this, &CResourceSelectorDialog::OnStopTrigger);
 	QObject::connect(m_pDialogButtons, &QDialogButtonBox::accepted, this, &CResourceSelectorDialog::accept);
@@ -167,7 +166,7 @@ void CResourceSelectorDialog::OnUpdateSelectedControl()
 
 	if (index.isValid())
 	{
-		CAsset const* const pAsset = SystemModelUtils::GetAssetFromIndex(index, 0);
+		CAsset const* const pAsset = CSystemSourceModel::GetAssetFromIndex(index, 0);
 		m_selectionIsValid = ((pAsset != nullptr) && (pAsset->GetType() == m_type));
 
 		if (m_selectionIsValid)
@@ -188,7 +187,7 @@ QModelIndex CResourceSelectorDialog::FindItem(string const& sControlName)
 
 	if (!matches.empty())
 	{
-		CAsset* const pAsset = SystemModelUtils::GetAssetFromIndex(matches[0], 0);
+		CAsset* const pAsset = CSystemSourceModel::GetAssetFromIndex(matches[0], 0);
 
 		if (pAsset != nullptr)
 		{
@@ -198,7 +197,7 @@ QModelIndex CResourceSelectorDialog::FindItem(string const& sControlName)
 			{
 				Scope const scope = pControl->GetScope();
 
-				if (scope == Utils::GetGlobalScope() || scope == m_scope)
+				if (scope == GlobalScopeId || scope == m_scope)
 				{
 					modelIndex = matches[0];
 				}
@@ -224,7 +223,7 @@ bool CResourceSelectorDialog::eventFilter(QObject* pObject, QEvent* pEvent)
 
 			if (index.isValid())
 			{
-				CAsset const* const pAsset = SystemModelUtils::GetAssetFromIndex(index, 0);
+				CAsset const* const pAsset = CSystemSourceModel::GetAssetFromIndex(index, 0);
 
 				if ((pAsset != nullptr) && (pAsset->GetType() == EAssetType::Trigger))
 				{
@@ -254,7 +253,7 @@ void CResourceSelectorDialog::OnItemDoubleClicked(QModelIndex const& modelIndex)
 {
 	if (m_selectionIsValid)
 	{
-		CAsset const* const pAsset = SystemModelUtils::GetAssetFromIndex(modelIndex, 0);
+		CAsset const* const pAsset = CSystemSourceModel::GetAssetFromIndex(modelIndex, 0);
 
 		if ((pAsset != nullptr) && (pAsset->GetType() == m_type))
 		{
@@ -272,7 +271,7 @@ void CResourceSelectorDialog::OnContextMenu(QPoint const& pos)
 
 	if (index.isValid())
 	{
-		CAsset const* const pAsset = SystemModelUtils::GetAssetFromIndex(index, 0);
+		CAsset const* const pAsset = CSystemSourceModel::GetAssetFromIndex(index, 0);
 
 		if ((pAsset != nullptr) && (pAsset->GetType() == EAssetType::Trigger))
 		{
@@ -285,13 +284,13 @@ void CResourceSelectorDialog::OnContextMenu(QPoint const& pos)
 
 		}
 
-		pContextMenu->addAction(tr("Expand Selection"), [&]() { m_pTreeView->ExpandSelection(QModelIndexList { index }); });
-		pContextMenu->addAction(tr("Collapse Selection"), [&]() { m_pTreeView->CollapseSelection(QModelIndexList { index }); });
+		pContextMenu->addAction(tr("Expand Selection"), [=]() { m_pTreeView->ExpandSelection(); });
+		pContextMenu->addAction(tr("Collapse Selection"), [=]() { m_pTreeView->CollapseSelection(); });
 		pContextMenu->addSeparator();
 	}
 
-	pContextMenu->addAction(tr("Expand All"), [&]() { m_pTreeView->expandAll(); });
-	pContextMenu->addAction(tr("Collapse All"), [&]() { m_pTreeView->collapseAll(); });
+	pContextMenu->addAction(tr("Expand All"), [=]() { m_pTreeView->expandAll(); });
+	pContextMenu->addAction(tr("Collapse All"), [=]() { m_pTreeView->collapseAll(); });
 
 	pContextMenu->exec(QCursor::pos());
 }

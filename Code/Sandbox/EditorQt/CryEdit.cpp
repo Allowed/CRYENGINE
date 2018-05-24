@@ -1161,11 +1161,11 @@ bool CCryEditApp::IdleProcessing(bool bBackgroundUpdate)
 					m_pEditor->Update();
 				}
 
-				// syncronize all animations so ensure that their compuation have finished
+				// synchronize all animations to ensure that their computation has finished
 				GetIEditorImpl()->GetSystem()->GetIAnimationSystem()->SyncAllAnimations();
-
-				GetIEditorImpl()->Notify(eNotify_OnIdleUpdate);
 			}
+
+			GetIEditorImpl()->Notify(eNotify_OnIdleUpdate);
 		}
 
 		GetIEditorImpl()->GetSystem()->GetIProfileSystem()->EndFrame();

@@ -1,4 +1,4 @@
-// Copyright 2001-2016 Crytek GmbH. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 #include "StdAfx.h"
 #include "AssetBrowser.h"
 #include "AssetDropHandler.h"
@@ -568,7 +568,18 @@ bool CAssetBrowser::GetDropFolder(string& folder) const
 
 	for (const QAbstractItemView* pView : views)
 	{
-		const QModelIndex index = pView->indexAt(pView->mapFromGlobal(QCursor::pos()));
+		if (!pView->isVisible())
+		{
+			continue;
+		}
+
+		const QPoint point = pView->mapFromGlobal(QCursor::pos());
+		if (!pView->contentsRect().contains(point))
+		{
+			continue;
+		}
+
+		const QModelIndex index = pView->indexAt(point);
 		if (index.isValid() && IsFolder(index))
 		{
 			folder = QtUtil::ToString(ToFolderPath(index));
@@ -1388,7 +1399,7 @@ void CAssetBrowser::OnContextMenu()
 
 		for (CAsset* asset : assets)
 		{
-			if (asset->GetType()->IsImported() && !asset->IsReadOnly())
+			if (asset->GetType()->IsImported() && !asset->IsReadOnly() && asset->HasSourceFile())
 			{
 				bCanReimport = true;
 			}
@@ -1795,7 +1806,10 @@ void CAssetBrowser::OnNavBack()
 {
 	m_dontPushNavHistory = true;
 
-	m_navigationIndex--;
+	if (m_navigationIndex >= 0)
+	{
+		m_navigationIndex--;
+	}
 
 	if (m_navigationIndex == -1)
 		m_foldersView->ClearSelection();

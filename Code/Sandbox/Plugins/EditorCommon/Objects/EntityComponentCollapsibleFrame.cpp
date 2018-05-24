@@ -1,4 +1,4 @@
-// Copyright 2001-2015 Crytek GmbH. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 #include "StdAfx.h"
 #include "EntityComponentCollapsibleFrame.h"
@@ -21,6 +21,7 @@ public:
 		, m_flags(pAddedComponent->GetComponentFlags())
 		, m_name(pAddedComponent->GetName())
 		, m_transform(pAddedComponent->GetTransform())
+		, m_componentInstanceGUID(pAddedComponent->GetGUID())
 		, m_parentComponentInstanceGUID(pAddedComponent->GetParent() != nullptr ? pAddedComponent->GetParent()->GetGUID() : CryGUID::Null())
 	{
 		// Serialize component properties to buffer

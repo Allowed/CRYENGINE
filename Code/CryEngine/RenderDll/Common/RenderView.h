@@ -19,6 +19,7 @@ class CPermanentRenderObject;
 struct SGraphicsPipelinePassContext;
 class CRenderPolygonDataPool;
 class CREClientPoly;
+enum EObjectCompilationOptions : uint8;
 
 //////////////////////////////////////////////////////////////////////////
 // Contain information about view need to render
@@ -140,7 +141,7 @@ public:
 	virtual CryJobState*         GetWriteMutex() override { return &m_jobstate_Write; };
 
 	virtual void                 AddRenderObject(CRenderElement* pRenderElement, SShaderItem& pShaderItem, CRenderObject* pRenderObject, const SRenderingPassInfo& passInfo, int list, int afterWater) threadsafe final;
-	virtual void                 AddPermanentObject(CRenderObject* pObject, const SInstanceUpdateInfo& pInstanceUpdateInfo, bool instanceDataDirty, const SRenderingPassInfo& passInfo) final;
+	virtual void                 AddPermanentObject(CRenderObject* pObject, const SRenderingPassInfo& passInfo) final;
 
 	virtual void                 SetGlobalFog(const SRenderGlobalFogDescription& fogDescription) final { m_globalFogDescription = fogDescription; };
 
@@ -168,11 +169,11 @@ public:
 
 	//! Get resolution of the render target surface(s)
 	//! Note that Viewport can be smaller then this.
-	Vec2i GetRenderResolution() const  { return Vec2i(m_RenderWidth, m_RenderHeight); }
-	Vec2i GetOutputResolution() const  { return m_pRenderOutput ? m_pRenderOutput->GetOutputResolution() : GetRenderResolution(); }
-	Vec2i GetDisplayResolution() const { return m_pRenderOutput ? m_pRenderOutput->GetDisplayResolution() : GetRenderResolution(); }
+	Vec2_tpl<uint32_t> GetRenderResolution() const { return { m_RenderWidth, m_RenderHeight }; }
+	Vec2_tpl<uint32_t> GetOutputResolution() const  { return m_pRenderOutput ? m_pRenderOutput->GetOutputResolution() : GetRenderResolution(); }
+	Vec2_tpl<uint32_t> GetDisplayResolution() const { return m_pRenderOutput ? m_pRenderOutput->GetDisplayResolution() : GetRenderResolution(); }
 
-	void  ChangeRenderResolution(int renderWidth, int renderHeight, bool bForce);
+	void  ChangeRenderResolution(uint32_t  renderWidth, uint32_t  renderHeight, bool bForce);
 	//////////////////////////////////////////////////////////////////////////
 
 public:
@@ -202,11 +203,11 @@ public:
 	RenderItems& GetRenderItems(int nRenderList);
 	uint32       GetBatchFlags(int nRenderList) const;
 
-	void         AddRenderItem(CRenderElement* pElem, CRenderObject* RESTRICT_POINTER pObj, const SShaderItem& shaderItem, uint32 nList, uint32 nBatchFlags,
-	                           SRendItemSorter sorter, bool bShadowPass, bool bForceOpaqueForward) threadsafe;
+	void         AddRenderItem(CRenderElement* pElem, CRenderObject* RESTRICT_POINTER pObj, const SShaderItem& shaderItem, uint32 nList, uint32 nBatchFlags, const SRenderingPassInfo& passInfo,
+							   SRendItemSorter sorter, bool bShadowPass, bool bForceOpaqueForward) threadsafe;
 
 	bool       CheckPermanentRenderObjects() const { return !m_permanentObjects.empty(); }
-	void       AddPermanentObjectImpl(CPermanentRenderObject* pObject, const SInstanceUpdateInfo& pInstanceUpdateInfo, bool instanceDataDirty, SRendItemSorter sorter, int shadowFrustumSide);
+	void       AddPermanentObjectImpl(CPermanentRenderObject* pObject, const SRenderingPassInfo& passInfo);
 
 	ItemsRange GetItemsRange(ERenderListID renderList);
 
@@ -332,6 +333,7 @@ public:
 	size_t                 GetViewInfoCount() const             { return m_viewInfoCount; };
 
 	void                   CompileModifiedRenderObjects();
+	void                   CalculateViewInfo();
 
 private:
 	void                   DeleteThis() const override;
@@ -350,7 +352,6 @@ private:
 	CCompiledRenderObject* AllocCompiledObject(CRenderObject* pObj, CRenderElement* pElem, const SShaderItem& shaderItem);
 	CCompiledRenderObject* AllocCompiledObjectTemporary(CRenderObject* pObj, CRenderElement* pElem, const SShaderItem& shaderItem);
 
-	void                   CalculateViewInfo();
 
 private:
 	EUsageMode m_usageMode;
@@ -436,8 +437,8 @@ private:
 	SSkinningDataPoolInfo m_SkinningData;
 	//////////////////////////////////////////////////////////////////////////
 
-	int32            m_RenderWidth = -1;
-	int32            m_RenderHeight = -1;
+	uint32           m_RenderWidth = -1;
+	uint32           m_RenderHeight = -1;
 
 	CRenderOutputPtr                 m_pRenderOutput; // Output render target (currently used for recursive pass and secondary viewport)
 	TexSmartPtr                      m_pColorTarget = nullptr;
@@ -455,8 +456,7 @@ private:
 	struct SPermanentRenderObjectCompilationData
 	{
 		CPermanentRenderObject* pObject;
-		SInstanceUpdateInfo     instanceUpdateInfo;
-		bool                    updateInstanceDataOnly;
+		EObjectCompilationOptions     compilationFlags;
 	};
 	lockfree_add_vector<SPermanentRenderObjectCompilationData> m_permanentRenderObjectsToCompile;
 
@@ -473,7 +473,6 @@ private:
 		CPermanentRenderObject* pRenderObject;
 		uint32                  itemSorter;
 		int                     shadowFrustumSide;
-		SInstanceUpdateInfo     instanceUpdateInfo;
 		bool                    requiresInstanceDataUpdate;
 	};
 	lockfree_add_vector<SPermanentObjectRecord> m_permanentObjects;
@@ -515,7 +514,7 @@ private:
 		CThreadSafeRendererContainer<AABB>                            m_nearestCasterBoxes;
 
 		void Clear();
-		void AddNearestCaster(CRenderObject* pObj);
+		void AddNearestCaster(CRenderObject* pObj, const SRenderingPassInfo& passInfo);
 		void CreateFrustumGroups();
 		void PrepareNearestShadows();
 	};

@@ -1,4 +1,4 @@
-// Copyright 2001-2016 Crytek GmbH. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
 #include "StdAfx.h"
 #include "EditorSubstanceManager.h"
@@ -372,6 +372,7 @@ void CManager::AddSubstanceArchiveContextMenu(CAsset* asset, CAbstractMenu* menu
 		QObject::connect(newAct, &QAction::triggered, this, &CManager::OnCreateInstance);
 	}
 	QAction* rebuild = menu->CreateAction("Rebuild All Instances");
+	rebuild->setEnabled(!CAssetManager::GetInstance()->GetReverseDependencies(*asset).empty());
 	QObject::connect(rebuild, &QAction::triggered, this, [=]() 
 	{
 		for (auto& item : CAssetManager::GetInstance()->GetReverseDependencies(*asset))

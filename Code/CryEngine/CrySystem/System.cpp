@@ -1514,7 +1514,7 @@ void CSystem::RunMainLoop()
 		Windows::UI::Core::CoreWindow::GetForCurrentThread()->Dispatcher->ProcessEvents(Windows::UI::Core::CoreProcessEventsOption::ProcessAllIfPresent);
 #endif
 
-		if (!DoFrame())
+		if (!DoFrame({}))
 		{
 			break;
 		}
@@ -1522,7 +1522,7 @@ void CSystem::RunMainLoop()
 }
 
 //////////////////////////////////////////////////////////////////////
-bool CSystem::DoFrame(uintptr_t hWnd, CEnumFlags<ESystemUpdateFlags> updateFlags)
+bool CSystem::DoFrame(const SDisplayContextKey& displayContextKey, CEnumFlags<ESystemUpdateFlags> updateFlags)
 {
 	// The frame profile system already creates an "overhead" profile label
 	// in StartFrame(). Hence we have to set the FRAMESTART before.
@@ -1564,7 +1564,7 @@ bool CSystem::DoFrame(uintptr_t hWnd, CEnumFlags<ESystemUpdateFlags> updateFlags
 		m_env.pNetwork->SyncWithGame(eNGS_SleepNetwork);
 	}
 
-	RenderBegin(hWnd != 0 ? hWnd : reinterpret_cast<uintptr_t>(m_hWnd));
+	RenderBegin(displayContextKey);
 
 	bool continueRunning = true;
 
@@ -1815,10 +1815,7 @@ bool CSystem::Update(CEnumFlags<ESystemUpdateFlags> updateFlags, int nPauseMode)
 				rCamera.GetFarPlane(),
 				fNewAspectRatio);
 
-			if (auto pRenderer = gEnv->pRenderer)
-			{
-				pRenderer->UpdateAuxDefaultCamera(rCamera);
-			}
+			SetViewCamera(rCamera);
 		}
 	}
 
@@ -2477,11 +2474,6 @@ void CSystem::SetViewCamera(CCamera& Camera)
 {
 	m_ViewCamera = Camera;
 	m_ViewCamera.CalculateRenderMatrices();
-
-	if (gEnv && gEnv->pRenderer)
-	{
-		gEnv->pRenderer->UpdateAuxDefaultCamera(m_ViewCamera);
-	}
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -3336,17 +3328,6 @@ void CSystem::SetSystemGlobalState(const ESystemGlobalState systemGlobalState)
 }
 
 //////////////////////////////////////////////////////////////////////////
-void* CSystem::GetRootWindowMessageHandler()
-{
-#if CRY_PLATFORM_WINDOWS
-	return &WndProc;
-#else
-	assert(false && "This platform does not support window message handlers");
-	return NULL;
-#endif
-}
-
-//////////////////////////////////////////////////////////////////////////
 void CSystem::RegisterWindowMessageHandler(IWindowMessageHandler* pHandler)
 {
 	assert(pHandler && !stl::find(m_windowMessageHandlers, pHandler) && "This IWindowMessageHandler is already registered");
@@ -3675,5 +3656,16 @@ static LRESULT WINAPI WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam
 	return DefWindowProcW(hWnd, uMsg, wParam, lParam);
 }
 #endif
+
+//////////////////////////////////////////////////////////////////////////
+void* CSystem::GetRootWindowMessageHandler()
+{
+#if CRY_PLATFORM_WINDOWS
+	return &WndProc;
+#else
+	assert(false && "This platform does not support window message handlers");
+	return NULL;
+#endif
+}
 
 #undef EXCLUDE_UPDATE_ON_CONSOLE

@@ -20,8 +20,6 @@ CAppDomain::CAppDomain(char *name, bool bActivate)
 
 	m_bNativeDomain = true;
 
-	CacheObjectMethods();
-
 	char executableFolder[_MAX_PATH];
 	CryGetExecutableFolder(_MAX_PATH, executableFolder);
 
@@ -43,15 +41,12 @@ CAppDomain::CAppDomain(char *name, bool bActivate)
 		return;
 	}
 
-	// Get the equivalent of gEnv
-	std::shared_ptr<CMonoClass> pEngineClass = m_pLibCore->GetTemporaryClass("CryEngine", "Engine");
-	CRY_ASSERT(pEngineClass != nullptr);
-
-	// Call the static Initialize function
-	if (std::shared_ptr<CMonoMethod> pMethod = pEngineClass->FindMethod("OnEngineStart").lock())
-	{
-		pMethod->Invoke();
-	}
+	m_pVector2Class = m_pLibCore->GetClass("CryEngine", "Vector2");
+	m_pVector3Class = m_pLibCore->GetClass("CryEngine", "Vector3");
+	m_pVector4Class = m_pLibCore->GetClass("CryEngine", "Vector4");
+	m_pQuaternionClass = m_pLibCore->GetClass("CryEngine", "Quaternion");
+	m_pAngles3Class = m_pLibCore->GetClass("CryEngine", "Angles3");
+	m_pColorClass = m_pLibCore->GetClass("CryEngine", "Color");
 }
 
 CAppDomain::CAppDomain(MonoInternals::MonoDomain* pMonoDomain)
@@ -63,8 +58,6 @@ CAppDomain::CAppDomain(MonoInternals::MonoDomain* pMonoDomain)
 #endif
 
 	m_bNativeDomain = false;
-
-	CacheObjectMethods();
 }
 
 CAppDomain::~CAppDomain()
@@ -77,6 +70,24 @@ CAppDomain::~CAppDomain()
 
 		// Call the static Shutdown function
 		if (std::shared_ptr<CMonoMethod> pMethod = pEngineClass->FindMethod("OnEngineShutdown").lock())
+		{
+			pMethod->Invoke();
+		}
+	}
+}
+
+void CAppDomain::Initialize()
+{
+	CacheObjectMethods();
+
+	if (m_pLibCore != nullptr)
+	{
+		// Get the equivalent of gEnv
+		std::shared_ptr<CMonoClass> pEngineClass = m_pLibCore->GetTemporaryClass("CryEngine", "Engine");
+		CRY_ASSERT(pEngineClass != nullptr);
+
+		// Call the static Initialize function
+		if (std::shared_ptr<CMonoMethod> pMethod = pEngineClass->FindMethod("OnEngineStart").lock())
 		{
 			pMethod->Invoke();
 		}

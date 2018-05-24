@@ -569,7 +569,7 @@ void CFlashUI::OnLoadingProgress(ILevelInfo* pLevel, int progressAmount)
 			gEnv->pRenderer->EF_Query(EFQ_RecurseLevel, nRecursionLevel);
 			const bool bStandAlone = (nRecursionLevel <= 0);
 			if (bStandAlone)
-				gEnv->pSystem->RenderBegin(0);
+				gEnv->pSystem->RenderBegin({});
 
 			const float currTime = gEnv->pTimer->GetAsyncCurTime();
 			OnPostUpdate(currTime - m_fLastAdvance);
@@ -618,11 +618,6 @@ void CFlashUI::LoadtimeUpdate(float fDeltaTime)
 	{
 		(*it)->Advance(fDeltaTime);
 	}
-
-	if (IHmdManager* pHmdManager = gEnv->pSystem->GetHmdManager())
-	{
-		pHmdManager->UpdateTracking(eVRComponent_Hmd);
-	}
 }
 
 //------------------------------------------------------------------------------------
@@ -632,20 +627,24 @@ void CFlashUI::LoadtimeRender()
 
 	if (CV_gfx_draw == 1)
 	{
-		if (IStereoRenderer* pStereoRenderer = gEnv->pRenderer->GetIStereoRenderer())
-		{
-			if (IHmdRenderer* pHmdRender = pStereoRenderer->GetIHmdRenderer())
-			{
-				pHmdRender->PrepareFrame();
-			}
-		}
+		IStereoRenderer* stereoRenderer = gEnv->pRenderer->GetIStereoRenderer();
+
+		if (stereoRenderer->GetStereoEnabled())
+			stereoRenderer->PrepareFrame();
 
 		for (TPlayerList::const_iterator it = m_loadtimePlayerList.begin(); it != m_loadtimePlayerList.end(); ++it)
 		{
 			IFlashPlayer* pFlashPlayer = (*it);
 
 			pFlashPlayer->SetClearFlags(FRT_CLEAR_COLOR, Clr_Transparent);
-			pFlashPlayer->Render(gEnv->pRenderer->IsStereoEnabled());
+			gEnv->pRenderer->FlashRenderPlayer(pFlashPlayer);
+		}
+
+		if (stereoRenderer->GetStereoEnabled())
+		{
+			if (!stereoRenderer->IsMenuModeEnabled())
+				stereoRenderer->DisplaySocialScreen();
+			stereoRenderer->SubmitFrameToHMD();
 		}
 	}
 }
@@ -1561,11 +1560,13 @@ IUIEventSystemIteratorPtr CFlashUI::CreateEventSystemIterator(IUIEventSystem::EE
 }
 
 //-------------------------------------------------------------------
-IUIElement* CFlashUI::GetUIElementByInstanceStr(const char* sUIInstanceStr) const
+std::pair<string, int> CFlashUI::GetUIIdentifiersByInstanceStr(const char* sUIInstanceStr) const
 {
-	assert(sUIInstanceStr != NULL);
-	if (sUIInstanceStr == NULL)
-		return NULL;
+	std::pair<string, int> result = std::make_pair<string, int>("", 0);
+
+	CRY_ASSERT(sUIInstanceStr != nullptr);
+	if (sUIInstanceStr == nullptr)
+		return result;
 
 	string tmpName(sUIInstanceStr);
 	PathUtil::RemoveExtension(tmpName);
@@ -1575,7 +1576,7 @@ IUIElement* CFlashUI::GetUIElementByInstanceStr(const char* sUIInstanceStr) cons
 
 	const char* pExt = PathUtil::GetExt(sUIInstanceStr);
 	if (*pExt != '\0' && strcmpi(pExt, "ui"))
-		return NULL;
+		return result;
 
 	uint instanceId = 0;
 
@@ -1589,19 +1590,39 @@ IUIElement* CFlashUI::GetUIElementByInstanceStr(const char* sUIInstanceStr) cons
 			name[index] = '\0';
 			id_index = index + 1;
 		}
+
 		index++;
 	}
+
+	result.first = name;
+
 	if (id_index != -1 && id_index < str_length)
 	{
-		instanceId = atoi(name + id_index);
+		result.second = atoi(name + id_index);
 	}
 
-	IUIElement* pElement = GetUIElement(name);
-	if (pElement)
+	return result;
+}
+
+std::pair<IUIElement*, IUIElement*> CFlashUI::GetUIElementsByInstanceStr(const char* sUIInstanceStr) const
+{
+	std::pair<IUIElement*, IUIElement*> result = std::make_pair<IUIElement*, IUIElement*>(nullptr, nullptr);
+	std::pair<string, int> identifiers = GetUIIdentifiersByInstanceStr(sUIInstanceStr);
+
+	if (identifiers.first == "")
+		return result;
+
+	if (result.second = result.first = GetUIElement(identifiers.first))
 	{
-		pElement = pElement->GetInstance(instanceId);
+		result.second = result.first->GetInstance(identifiers.second);
 	}
-	return pElement;
+
+	return result;
+}
+
+IUIElement* CFlashUI::GetUIElementByInstanceStr(const char* sUIInstanceStr) const
+{
+	return CFlashUI::GetUIElementsByInstanceStr(sUIInstanceStr).second;
 }
 
 //-------------------------------------------------------------------

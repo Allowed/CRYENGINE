@@ -2,14 +2,19 @@
 
 #pragma once
 
-#include "Assets.h"
+#include "Control.h"
+#include "Folder.h"
+#include "Library.h"
+#include "ScopeInfo.h"
 
 #include <CrySandbox/CrySignal.h>
-#include <array>
 
 namespace ACE
 {
-struct IImplItem;
+namespace Impl
+{
+struct IItem;
+} // namespace Impl
 
 class CAssetsManager final
 {
@@ -18,70 +23,66 @@ public:
 	CAssetsManager();
 	~CAssetsManager();
 
-	void      Initialize();
-	void      Clear();
+	void             Initialize();
+	void             Clear();
 
-	CLibrary* CreateLibrary(string const& name);
-	CLibrary* GetLibrary(size_t const index) const { return m_libraries[index]; }
-	size_t    GetLibraryCount() const              { return m_libraries.size(); }
+	CLibrary*        CreateLibrary(string const& name);
+	CLibrary*        GetLibrary(size_t const index) const { return m_libraries[index]; }
+	size_t           GetLibraryCount() const              { return m_libraries.size(); }
 
-	CAsset*   CreateFolder(string const& name, CAsset* const pParent = nullptr);
-	CControl* CreateControl(string const& name, EAssetType const type, CAsset* const pParent = nullptr);
-	void      CreateDefaultControl(string const& name, EAssetType const type, CAsset* const pParent, bool& wasModified, string const& description);
-	void      DeleteItem(CAsset* const pAsset);
+	CAsset*          CreateFolder(string const& name, CAsset* const pParent = nullptr);
+	CControl*        CreateControl(string const& name, EAssetType const type, CAsset* const pParent = nullptr);
+	CControl*        CreateDefaultControl(string const& name, EAssetType const type, CAsset* const pParent, bool const isInternal, string const& description);
 
-	CControl* GetControlByID(ControlId const id) const;
-	CControl* FindControl(string const& name, EAssetType const type, CAsset* const pParent = nullptr) const;
+	CControl*        FindControl(string const& name, EAssetType const type, CAsset* const pParent = nullptr) const;
+	CControl*        FindControlById(ControlId const id) const;
 
-	using Controls = std::vector<CControl*>;
-	Controls const& GetControls() const { return m_controls; }
+	Controls const&  GetControls() const { return m_controls; }
 
-	void            ClearScopes();
-	void            AddScope(string const& name, bool const isLocalOnly = false);
-	bool            ScopeExists(string const& name) const;
-	Scope           GetScope(string const& name) const;
-	SScopeInfo      GetScopeInfo(Scope const id) const;
-	void            GetScopeInfoList(ScopeInfoList& scopeList) const;
+	void             ClearScopes();
+	void             AddScope(string const& name, bool const isLocalOnly = false);
+	bool             ScopeExists(string const& name) const;
+	Scope            GetScope(string const& name) const;
+	SScopeInfo       GetScopeInfo(Scope const id) const;
+	void             GetScopeInfos(ScopeInfos& scopeInfos) const;
 
-	void            ClearAllConnections();
-	void            BackupAndClearAllConnections();
-	void            ReloadAllConnections();
-	void            MoveItems(CAsset* const pParent, std::vector<CAsset*> const& assets);
-	void            CreateAndConnectImplItems(IImplItem* const pIImplItem, CAsset* const pParent);
+	void             ClearAllConnections();
+	void             BackupAndClearAllConnections();
+	void             ReloadAllConnections();
+	void             DeleteAsset(CAsset* const pAsset);
+	void             MoveAssets(CAsset* const pParent, Assets const& assets);
+	void             CreateAndConnectImplItems(Impl::IItem* const pIItem, CAsset* const pParent);
 
-	bool            IsTypeDirty(EAssetType const type) const;
-	bool            IsDirty() const;
-	void            ClearDirtyFlags();
-	bool            IsLoading() const { return m_isLoading; }
+	bool             IsTypeDirty(EAssetType const type) const;
+	bool             IsDirty() const;
+	void             ClearDirtyFlags();
+	bool             IsLoading() const { return m_isLoading; }
 
-	void            SetAssetModified(CAsset* const pAsset, bool const isModified);
-	void            SetTypeModified(EAssetType const type, bool const isModified);
+	void             SetAssetModified(CAsset* const pAsset, bool const isModified);
 
-	void            UpdateAllConnectionStates();
-	void            UpdateLibraryConnectionStates(CAsset* pAsset);
-	void            UpdateAssetConnectionStates(CAsset* const pAsset);
+	void             UpdateAllConnectionStates();
 
-	void            OnControlAboutToBeModified(CControl* const pControl);
-	void            OnControlModified(CControl* const pControl);
-	void            OnConnectionAdded(CControl* const pControl, IImplItem* const pIImplItem);
-	void            OnConnectionRemoved(CControl* const pControl, IImplItem* const pIImplItem);
-	void            OnAssetRenamed(CAsset* const pAsset);
+	void             OnControlAboutToBeModified(CControl* const pControl);
+	void             OnControlModified(CControl* const pControl);
+	void             OnConnectionAdded(CControl* const pControl, Impl::IItem* const pIItem);
+	void             OnConnectionRemoved(CControl* const pControl, Impl::IItem* const pIItem);
+	void             OnAssetRenamed(CAsset* const pAsset);
 
-	void            UpdateFolderPaths();
-	string const&   GetConfigFolderPath() const;
-	string const&   GetAssetFolderPath() const;
+	void             UpdateFolderPaths();
+	string const&    GetConfigFolderPath() const;
+	string const&    GetAssetFolderPath() const;
 
-	FileNames       GetModifiedLibraries() const { return m_modifiedLibraryNames; }
+	FileNames const& GetModifiedLibraries() const { return m_modifiedLibraryNames; }
 
 	CCrySignal<void(bool)>             SignalIsDirty;
 	CCrySignal<void()>                 SignalLibraryAboutToBeAdded;
 	CCrySignal<void(CLibrary*)>        SignalLibraryAdded;
 	CCrySignal<void(CLibrary*)>        SignalLibraryAboutToBeRemoved;
 	CCrySignal<void()>                 SignalLibraryRemoved;
-	CCrySignal<void(CAsset*)>          SignalItemAboutToBeAdded;
-	CCrySignal<void(CAsset*)>          SignalItemAdded;
-	CCrySignal<void(CAsset*)>          SignalItemAboutToBeRemoved;
-	CCrySignal<void(CAsset*, CAsset*)> SignalItemRemoved;
+	CCrySignal<void(CAsset*)>          SignalAssetAboutToBeAdded;
+	CCrySignal<void(CAsset*)>          SignalAssetAdded;
+	CCrySignal<void(CAsset*)>          SignalAssetAboutToBeRemoved;
+	CCrySignal<void(CAsset*, CAsset*)> SignalAssetRemoved;
 	CCrySignal<void(CAsset*)>          SignalAssetRenamed;
 	CCrySignal<void(CControl*)>        SignalControlModified;
 	CCrySignal<void(CControl*)>        SignalConnectionAdded;
@@ -89,11 +90,15 @@ public:
 
 private:
 
-	CAsset*   CreateAndConnectImplItemsRecursively(IImplItem* const pIImplItem, CAsset* const pParent);
+	CAsset*   CreateAndConnectImplItemsRecursively(Impl::IItem* const pIItem, CAsset* const pParent);
 	ControlId GenerateUniqueId() { return m_nextId++; }
 
+	void      SetTypeModified(EAssetType const type, bool const isModified);
+
+	void      UpdateLibraryConnectionStates(CAsset* const pAsset);
+	void      UpdateAssetConnectionStates(CAsset* const pAsset);
+
 	using ScopesInfo = std::map<Scope, SScopeInfo>;
-	using Libraries = std::vector<CLibrary*>;
 	using ModifiedSystemTypes = std::set<EAssetType>;
 
 	Libraries           m_libraries;
@@ -107,15 +112,5 @@ private:
 	string              m_configFolderPath;
 	string              m_assetFolderPath;
 };
-
-namespace Utils
-{
-Scope   GetGlobalScope();
-string  GenerateUniqueName(string const& name, EAssetType const type, CAsset* const pParent);
-string  GenerateUniqueLibraryName(string const& name);
-string  GenerateUniqueControlName(string const& name, EAssetType const type);
-CAsset* GetParentLibrary(CAsset* pAsset);
-void    SelectTopLevelAncestors(std::vector<CAsset*> const& source, std::vector<CAsset*>& dest);
-} // namespace Utils
 } // namespace ACE
 

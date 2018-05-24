@@ -3,15 +3,13 @@
 #include "StdAfx.h"
 #include "ConnectionsWidget.h"
 
-#include "Assets.h"
 #include "AudioControlsEditorPlugin.h"
 #include "ImplementationManager.h"
 #include "TreeView.h"
 #include "ConnectionsModel.h"
 
-#include <IEditorImpl.h>
-#include <IImplItem.h>
-#include <IEditor.h>
+#include <ModelUtils.h>
+#include <IItem.h>
 #include <QtUtil.h>
 #include <Controls/QuestionDialog.h>
 #include <CrySerialization/IArchive.h>
@@ -42,7 +40,6 @@ CConnectionsWidget::CConnectionsWidget(QWidget* const pParent)
 
 	m_pTreeView->setEditTriggers(QAbstractItemView::NoEditTriggers);
 	m_pTreeView->setDragEnabled(false);
-	m_pTreeView->setAcceptDrops(true);
 	m_pTreeView->setDragDropMode(QAbstractItemView::DropOnly);
 	m_pTreeView->setSelectionMode(QAbstractItemView::ExtendedSelection);
 	m_pTreeView->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -56,7 +53,7 @@ CConnectionsWidget::CConnectionsWidget(QWidget* const pParent)
 	m_pTreeView->header()->setMinimumSectionSize(25);
 	m_pTreeView->header()->setSectionResizeMode(static_cast<int>(CConnectionsModel::EColumns::Notification), QHeaderView::ResizeToContents);
 	m_pTreeView->SetNameColumn(m_nameColumn);
-	m_pTreeView->SetNameRole(static_cast<int>(CConnectionsModel::ERoles::Name));
+	m_pTreeView->SetNameRole(static_cast<int>(ModelUtils::ERoles::Name));
 	m_pTreeView->TriggerRefreshHeaderColumns();
 
 	QObject::connect(m_pTreeView, &CTreeView::customContextMenuRequested, this, &CConnectionsWidget::OnContextMenu);
@@ -85,7 +82,6 @@ CConnectionsWidget::CConnectionsWidget(QWidget* const pParent)
 		{
 			if (!g_assetsManager.IsLoading() && (m_pControl == pControl))
 			{
-			  // Clear the selection if a connection is removed.
 			  m_pTreeView->selectionModel()->clear();
 			  RefreshConnectionProperties();
 			}
@@ -155,19 +151,16 @@ void CConnectionsWidget::OnContextMenu(QPoint const& pos)
 
 		if (selectionCount == 1)
 		{
-			if (g_pEditorImpl != nullptr)
-			{
-				ControlId const itemId = static_cast<ControlId>(selection[0].data(static_cast<int>(CConnectionsModel::ERoles::Id)).toInt());
-				IImplItem const* const pIImplItem = g_pEditorImpl->GetItem(itemId);
+			ControlId const itemId = static_cast<ControlId>(selection[0].data(static_cast<int>(ModelUtils::ERoles::Id)).toInt());
+			Impl::IItem const* const pIItem = g_pIImpl->GetItem(itemId);
 
-				if ((pIImplItem != nullptr) && !pIImplItem->IsPlaceholder())
-				{
-					pContextMenu->addSeparator();
-					pContextMenu->addAction(tr("Select in Middleware Data"), [=]()
-						{
-							SignalSelectConnectedImplItem(itemId);
-					  });
-				}
+			if ((pIItem != nullptr) && ((pIItem->GetFlags() & EItemFlags::IsPlaceHolder) == 0))
+			{
+				pContextMenu->addSeparator();
+				pContextMenu->addAction(tr("Select in Middleware Data"), [=]()
+					{
+						SignalSelectConnectedImplItem(itemId);
+				  });
 			}
 		}
 
@@ -180,7 +173,7 @@ void CConnectionsWidget::OnConnectionAdded(ControlId const id)
 {
 	if (m_pControl != nullptr)
 	{
-		auto const& matches = m_pAttributeFilterProxyModel->match(m_pAttributeFilterProxyModel->index(0, 0, QModelIndex()), static_cast<int>(CConnectionsModel::ERoles::Id), id, 1, Qt::MatchRecursive);
+		auto const& matches = m_pAttributeFilterProxyModel->match(m_pAttributeFilterProxyModel->index(0, 0, QModelIndex()), static_cast<int>(ModelUtils::ERoles::Id), id, 1, Qt::MatchRecursive);
 
 		if (!matches.isEmpty())
 		{
@@ -201,39 +194,36 @@ void CConnectionsWidget::RemoveSelectedConnection()
 
 		if (!selectedIndexes.empty())
 		{
-			int const size = selectedIndexes.length();
+			int const numSelected = selectedIndexes.length();
 			QString text;
 
-			if (size == 1)
+			if (numSelected == 1)
 			{
 				text = R"(Are you sure you want to delete the connection between ")" + QtUtil::ToQString(m_pControl->GetName()) + R"(" and ")" + selectedIndexes[0].data(Qt::DisplayRole).toString() + R"("?)";
 			}
 			else
 			{
-				text = "Are you sure you want to delete the " + QString::number(size) + " selected connections?";
+				text = "Are you sure you want to delete the " + QString::number(numSelected) + " selected connections?";
 			}
 
 			messageBox->SetupQuestion("Audio Controls Editor", text);
 
 			if (messageBox->Execute() == QDialogButtonBox::Yes)
 			{
-				if (g_pEditorImpl != nullptr)
+				std::vector<Impl::IItem*> implItems;
+				implItems.reserve(selectedIndexes.size());
+
+				for (QModelIndex const& index : selectedIndexes)
 				{
-					std::vector<IImplItem*> implItems;
-					implItems.reserve(selectedIndexes.size());
+					ControlId const id = static_cast<ControlId>(index.data(static_cast<int>(ModelUtils::ERoles::Id)).toInt());
+					implItems.push_back(g_pIImpl->GetItem(id));
+				}
 
-					for (QModelIndex const& index : selectedIndexes)
+				for (Impl::IItem* const pIItem : implItems)
+				{
+					if (pIItem != nullptr)
 					{
-						ControlId const id = static_cast<ControlId>(index.data(static_cast<int>(CConnectionsModel::ERoles::Id)).toInt());
-						implItems.push_back(g_pEditorImpl->GetItem(id));
-					}
-
-					for (IImplItem* const pIImplItem : implItems)
-					{
-						if (pIImplItem != nullptr)
-						{
-							m_pControl->RemoveConnection(pIImplItem);
-						}
+						m_pControl->RemoveConnection(pIItem);
 					}
 				}
 
@@ -261,7 +251,7 @@ void CConnectionsWidget::SetControl(CControl* const pControl, bool const restore
 
 				for (auto const itemId : selectedConnections)
 				{
-					auto const& matches = m_pAttributeFilterProxyModel->match(m_pAttributeFilterProxyModel->index(0, 0, QModelIndex()), static_cast<int>(CConnectionsModel::ERoles::Id), itemId, 1, Qt::MatchRecursive);
+					auto const& matches = m_pAttributeFilterProxyModel->match(m_pAttributeFilterProxyModel->index(0, 0, QModelIndex()), static_cast<int>(ModelUtils::ERoles::Id), itemId, 1, Qt::MatchRecursive);
 
 					if (!matches.isEmpty())
 					{
@@ -309,7 +299,7 @@ void CConnectionsWidget::RefreshConnectionProperties()
 		{
 			if (index.isValid())
 			{
-				ControlId const id = static_cast<ControlId>(index.data(static_cast<int>(CConnectionsModel::ERoles::Id)).toInt());
+				ControlId const id = static_cast<ControlId>(index.data(static_cast<int>(ModelUtils::ERoles::Id)).toInt());
 				ConnectionPtr const pConnection = m_pControl->GetConnection(id);
 
 				if ((pConnection != nullptr) && pConnection->HasProperties())
@@ -328,19 +318,19 @@ void CConnectionsWidget::RefreshConnectionProperties()
 //////////////////////////////////////////////////////////////////////////
 void CConnectionsWidget::UpdateSelectedConnections()
 {
-	std::vector<ControlId> currentSelection;
+	ControlIds selectedIds;
 	QModelIndexList const& selectedIndexes = m_pTreeView->selectionModel()->selectedRows(m_nameColumn);
 
 	for (auto const& index : selectedIndexes)
 	{
 		if (index.isValid())
 		{
-			ControlId const id = static_cast<ControlId>(index.data(static_cast<int>(CConnectionsModel::ERoles::Id)).toInt());
-			currentSelection.push_back(id);
+			ControlId const id = static_cast<ControlId>(index.data(static_cast<int>(ModelUtils::ERoles::Id)).toInt());
+			selectedIds.push_back(id);
 		}
 	}
 
-	m_pControl->SetSelectedConnections(currentSelection);
+	m_pControl->SetSelectedConnections(selectedIds);
 }
 
 //////////////////////////////////////////////////////////////////////////
@@ -351,13 +341,13 @@ void CConnectionsWidget::ResizeColumns()
 }
 
 //////////////////////////////////////////////////////////////////////////
-void CConnectionsWidget::BackupTreeViewStates()
+void CConnectionsWidget::OnAboutToReload()
 {
 	m_pTreeView->BackupSelection();
 }
 
 //////////////////////////////////////////////////////////////////////////
-void CConnectionsWidget::RestoreTreeViewStates()
+void CConnectionsWidget::OnReloaded()
 {
 	m_pTreeView->RestoreSelection();
 }

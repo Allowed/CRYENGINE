@@ -253,7 +253,8 @@ bool CTexture::CreateDeviceTexture(const void* pData[])
 
 	bool bResult = false;
 	gRenDev->ExecuteRenderThreadCommand([=, &bResult] {
-		bResult = this->RT_CreateDeviceTexture(pData); }, ERenderCommandFlags::LevelLoadingThread_executeDirect | ERenderCommandFlags::FlushAndWait);
+		bResult = this->RT_CreateDeviceTexture(pData);
+	}, ERenderCommandFlags::LevelLoadingThread_executeDirect | ERenderCommandFlags::FlushAndWait);
 
 	return bResult;
 }
@@ -663,7 +664,7 @@ void SEnvTexture::ReleaseDeviceObjects()
 
 //////////////////////////////////////////////////////////////////////////
 
-static void DrawSceneToCubeSide(CRenderOutputPtr pRenderOutput, Vec3& Pos, int tex_size, int side)
+static void DrawSceneToCubeSide(CRenderOutputPtr pRenderOutput, const Vec3& Pos, int tex_size, int side)
 {
 	CRY_ASSERT(gRenDev->m_pRT->IsMainThread());
 	if (!iSystem)
@@ -698,7 +699,9 @@ static void DrawSceneToCubeSide(CRenderOutputPtr pRenderOutput, Vec3& Pos, int t
 		r->Logv(".. DrawSceneToCubeSide .. (DrawCubeSide %d)\n", side);
 #endif
 
-	int nRFlags = SHDF_CUBEMAPGEN | SHDF_ALLOWPOSTPROCESS | SHDF_ALLOWHDR | SHDF_ZPASS | SHDF_NOASYNC;
+	gEnv->pSystem->SetViewCamera(tmpCamera);
+
+	int nRFlags = SHDF_CUBEMAPGEN | SHDF_ALLOWPOSTPROCESS | SHDF_ALLOWHDR | SHDF_ZPASS | SHDF_NOASYNC | SHDF_ALLOW_AO;
 	uint32 nRenderPassFlags = SRenderingPassInfo::DEFAULT_FLAGS | SRenderingPassInfo::CUBEMAP_GEN;
 	
 	// TODO: Try to run cube-map generation as recursive pass
@@ -713,17 +716,21 @@ static void DrawSceneToCubeSide(CRenderOutputPtr pRenderOutput, Vec3& Pos, int t
 
 	pEngine->RenderWorld(nRFlags, generalPassInfo, __FUNCTION__);
 
+	gEnv->pSystem->SetViewCamera(prevCamera);
+
 #ifdef DO_RENDERLOG
 	if (CRenderer::CV_r_log)
 		r->Logv(".. End DrawSceneToCubeSide .. (DrawCubeSide %d)\n", side);
 #endif
 }
 
-bool CTexture::RenderEnvironmentCMHDR(int size, Vec3& Pos, TArray<unsigned short>& vecData)
+bool CTexture::RenderEnvironmentCMHDR(int size, const Vec3& Pos, TArray<unsigned short>& vecData)
 {
 #if CRY_PLATFORM_DESKTOP
 
-	iLog->Log("Start generating a cubemap...");
+	float timeStart = gEnv->pTimer->GetAsyncTime().GetSeconds();
+
+	iLog->Log("Start generating a cubemap (%d x %d) at position (%.1f, %.1f, %.1f)", size, size, Pos.x, Pos.y, Pos.z);
 
 	vecData.SetUse(0);
 
@@ -741,6 +748,10 @@ bool CTexture::RenderEnvironmentCMHDR(int size, Vec3& Pos, TArray<unsigned short
 	// Disable/set cvars that can affect cube map generation. This is thread unsafe (we assume editor will not run in mt mode), no other way around at this time
 	//	- coverage buffer unreliable for multiple views
 	//	- custom view distance ratios
+	ICVar* pCheckOcclusionCV = gEnv->pConsole->GetCVar("e_CheckOcclusion");
+	const int32 nCheckOcclusion = pCheckOcclusionCV ? pCheckOcclusionCV->GetIVal() : 1;
+	if (pCheckOcclusionCV)
+		pCheckOcclusionCV->Set(0);
 
 	ICVar* pCoverageBufferCV = gEnv->pConsole->GetCVar("e_CoverageBuffer");
 	const int32 nCoverageBuffer = pCoverageBufferCV ? pCoverageBufferCV->GetIVal() : 0;
@@ -756,6 +767,11 @@ bool CTexture::RenderEnvironmentCMHDR(int size, Vec3& Pos, TArray<unsigned short
 	const float fOldViewDistRatio = pViewDistRatioCV ? pViewDistRatioCV->GetFVal() : 1.f;
 	if (pViewDistRatioCV)
 		pViewDistRatioCV->Set(10000.f);
+
+	ICVar* pLodTransitionTime = gEnv->pConsole->GetCVar("e_LodTransitionTime");
+	const float fOldLodTransitionTime = pLodTransitionTime ? pLodTransitionTime->GetFVal() : .0f;
+	if (pLodTransitionTime)
+		pLodTransitionTime->Set(.0f);
 
 	ICVar* pViewDistRatioVegetationCV = gEnv->pConsole->GetCVar("e_ViewDistRatioVegetation");
 	const float fOldViewDistRatioVegetation = pViewDistRatioVegetationCV ? pViewDistRatioVegetationCV->GetFVal() : 100.f;
@@ -793,9 +809,21 @@ bool CTexture::RenderEnvironmentCMHDR(int size, Vec3& Pos, TArray<unsigned short
 
 	for (int nSide = 0; nSide < 6; nSide++)
 	{
-		gEnv->nMainFrameID++;
+		while (true)
+		{
+			bool bSvoReady = gEnv->p3DEngine->IsSvoReady(true);
 
-		DrawSceneToCubeSide(pRenderOutput, Pos, size, nSide);
+			gEnv->nMainFrameID++;
+
+			DrawSceneToCubeSide(pRenderOutput, Pos, size, nSide);
+
+			bSvoReady &= gEnv->p3DEngine->IsSvoReady(true);
+
+			if (bSvoReady)
+				break;
+
+			CrySleep(10);
+		}
 
 		gcpRendD3D->ExecuteRenderThreadCommand([&]
 		{
@@ -817,6 +845,9 @@ bool CTexture::RenderEnvironmentCMHDR(int size, Vec3& Pos, TArray<unsigned short
 
 	SAFE_RELEASE(ptexGenEnvironmentCM);
 
+	if (pCheckOcclusionCV)
+		pCheckOcclusionCV->Set(nCheckOcclusion);
+
 	if (pCoverageBufferCV)
 		pCoverageBufferCV->Set(nCoverageBuffer);
 
@@ -825,6 +856,9 @@ bool CTexture::RenderEnvironmentCMHDR(int size, Vec3& Pos, TArray<unsigned short
 
 	if (pViewDistRatioCV)
 		pViewDistRatioCV->Set(fOldViewDistRatio);
+
+	if (pLodTransitionTime)
+		pLodTransitionTime->Set(fOldLodTransitionTime);
 
 	if (pViewDistRatioVegetationCV)
 		pViewDistRatioVegetationCV->Set(fOldViewDistRatioVegetation);
@@ -840,7 +874,8 @@ bool CTexture::RenderEnvironmentCMHDR(int size, Vec3& Pos, TArray<unsigned short
 	if (pSSDOHalfResCV)
 		pSSDOHalfResCV->Set(nOldSSDOHalfRes);
 
-	iLog->Log("Successfully finished generating a cubemap");
+	float timeUsed = gEnv->pTimer->GetAsyncTime().GetSeconds() - timeStart;
+	iLog->Log("Successfully finished generating a cubemap in %.1f sec", timeUsed);
 #endif
 
 	return true;

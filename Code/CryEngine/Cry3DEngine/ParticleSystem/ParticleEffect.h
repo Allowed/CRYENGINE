@@ -1,12 +1,5 @@
 // Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 
-// -------------------------------------------------------------------------
-//  Created:     06/04/2014 by Filipe amim
-//  Description:
-// -------------------------------------------------------------------------
-//
-////////////////////////////////////////////////////////////////////////////
-
 #pragma once
 
 #include "ParticleCommon.h"
@@ -33,10 +26,11 @@ public:
 	virtual void                   Serialize(Serialization::IArchive& ar) override;
 	virtual IParticleEmitter*      Spawn(const ParticleLoc& loc, const SpawnParams* pSpawnParams = NULL) override;
 	virtual uint                   GetNumComponents() const override              { return m_components.size(); }
-	virtual IParticleComponent*    GetComponent(uint componentIdx) const override { return m_components[componentIdx]; }
+	virtual IParticleComponent*    GetComponent(uint componentIdx) const override { return componentIdx < m_components.size() ? m_components[componentIdx] : nullptr; }
 	virtual IParticleComponent*    AddComponent() override;
-	virtual void                   RemoveComponent(uint componentIdx) override;
+	virtual void                   RemoveComponent(uint componentIdx, bool bRecursive = false) override;
 	virtual void                   SetChanged() override;
+	virtual void                   Update() override;
 	virtual Serialization::SStruct GetEffectOptionsSerializer() const override;
 	virtual TParticleAttributesPtr CreateAttributesInstance() const override;
 	// ~pfx2 IParticleEffect
@@ -75,7 +69,7 @@ public:
 	string                    MakeUniqueName(const CParticleComponent* forComponent, const char* name);
 	uint                      AddRenderObjectId();
 	uint                      GetNumRenderObjectIds() const;
-	float                     GetEquilibriumTime() const;
+	STimingParams const&      GetTimings() const                                            { return m_timings; }
 	uint                      GetEnvironFlags() const                                       { return m_environFlags; }
 	void                      AddEnvironFlags(uint flags)                                   { m_environFlags |= flags; }
 	string                    GetShortName() const;
@@ -94,6 +88,7 @@ private:
 	string             m_name;
 	TAttributeTablePtr m_pAttributes;
 	TComponents        m_components;
+	STimingParams      m_timings;
 	uint               m_numRenderObjects;
 	uint               m_environFlags;
 	int                m_editVersion;

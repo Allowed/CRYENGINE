@@ -80,10 +80,12 @@ uint32 CAttachmentSKIN::Immediate_AddBinding( IAttachmentObject* pIAttachmentObj
 
 	if (NotMatchingNames)
 	{
-		if (pInstanceSkel->m_CharEditMode || nLoadingFlags & CA_ImmediateMode)
+		// For now limited to CharEdit
+		if (pInstanceSkel->m_CharEditMode || (nLoadingFlags & CA_CharEditModel))
 		{
-		  //for now limited to CharEdit
-			RecreateDefaultSkeleton(pInstanceSkel,nLoadingFlags); 
+			assert(pInstanceSkel->m_CharEditMode);
+			assert(nLoadingFlags & CA_CharEditModel);
+			RecreateDefaultSkeleton(pInstanceSkel, nLoadingFlags | CA_CharEditModel);
 		}
 		else
 		{
@@ -123,20 +125,25 @@ uint32 CAttachmentSKIN::Immediate_AddBinding( IAttachmentObject* pIAttachmentObj
 	return 1; 
 }
 
-void CAttachmentSKIN::Immediate_ClearBinding(uint32 nLoadingFlags) 
-{ 
+void CAttachmentSKIN::Immediate_ClearBinding(uint32 nLoadingFlags)
+{
 	if (m_pIAttachmentObject)
 	{
 		m_pIAttachmentObject->Release();
 		m_pIAttachmentObject = 0;
 		ReleaseModelSkin();
 
-		if (nLoadingFlags&CA_SkipSkelRecreation)
+		if (nLoadingFlags & CA_SkipSkelRecreation)
 			return;
-		//for now limited to CharEdit
+
+		// For now limited to CharEdit
 		CCharInstance* pInstanceSkel = m_pAttachmentManager->m_pSkelInstance;
-		if (pInstanceSkel->m_CharEditMode)
-			RecreateDefaultSkeleton(pInstanceSkel,CA_CharEditModel|nLoadingFlags); 
+		if (pInstanceSkel->m_CharEditMode || (nLoadingFlags & CA_CharEditModel))
+		{
+			assert(pInstanceSkel->m_CharEditMode);
+			assert(nLoadingFlags & CA_CharEditModel);
+			RecreateDefaultSkeleton(pInstanceSkel, nLoadingFlags | CA_CharEditModel);
+		}
 	}
 }; 
 
@@ -262,7 +269,10 @@ void CAttachmentSKIN::GetRandomPoints(Array<PosNorm> points, CRndGen& seed, EGeo
 	int nLOD = m_pModelSkin->SelectNearestLoadedLOD(0);
 	IRenderMesh* pMesh = m_pModelSkin->GetIRenderMesh(nLOD);
 	if (!pMesh)
+	{
+		points.fill(ZERO);
 		return;
+	}
 
 	SSkinningData* pSkinningData = NULL;
 	int nFrameID = gEnv->pRenderer->EF_GetSkinningPoolID();
@@ -526,7 +536,7 @@ void CAttachmentSKIN::DrawAttachment(SRendParams& RendParams, const SRenderingPa
 
 	pObj->m_fAlpha = RendParams.fAlpha;
 	pObj->m_fDistance =	RendParams.fDistance;
-	pObj->m_II.m_AmbColor = RendParams.AmbientColor;
+	pObj->SetAmbientColor(RendParams.AmbientColor, passInfo);
 
 	uLocalObjFlags |= RendParams.dwFObjFlags;
 
@@ -546,8 +556,8 @@ void CAttachmentSKIN::DrawAttachment(SRendParams& RendParams, const SRenderingPa
 
 	assert(RendParams.pMatrix);
 	Matrix34 RenderMat34 = (*RendParams.pMatrix);
-	pObj->m_II.m_Matrix = RenderMat34;
-  pObj->m_nClipVolumeStencilRef = RendParams.nClipVolumeStencilRef;
+	pObj->SetMatrix(RenderMat34, passInfo);
+	pObj->m_nClipVolumeStencilRef = RendParams.nClipVolumeStencilRef;
 	pObj->m_nTextureID = RendParams.nTextureID;
 
 	pObj->m_nMaterialLayers = RendParams.nMaterialLayersBlend;
@@ -613,9 +623,7 @@ void CAttachmentSKIN::DrawAttachment(SRendParams& RendParams, const SRenderingPa
 	pD->m_pSkinningData = GetVertexTransformationData(bUseCPUDeformation, nRenderLOD, passInfo);
 
 	Vec3 skinOffset = m_pModelSkin->m_arrModelMeshes[nRenderLOD].m_vRenderMeshOffset;
-	pD->m_pSkinningData->vecPrecisionOffset[0] = skinOffset.x;
-	pD->m_pSkinningData->vecPrecisionOffset[1] = skinOffset.y;
-	pD->m_pSkinningData->vecPrecisionOffset[2] = skinOffset.z;
+	pD->m_pSkinningData->vecAdditionalOffset = skinOffset;
 
 	IRenderMesh* pRenderMesh = m_pModelSkin->GetIRenderMesh(nRenderLOD);
 
@@ -814,7 +822,7 @@ void CAttachmentSKIN::DrawAttachment(SRendParams& RendParams, const SRenderingPa
 			{
 				CModelMesh* pModelMesh = m_pModelSkin->GetModelMesh(nRenderLOD);
 				gEnv->pJobManager->WaitForJob(*pD->m_pSkinningData->pAsyncJobs);
-				SoftwareSkinningDQ_VS_Emulator(pModelMesh, pObj->m_II.m_Matrix, tang, bitang, norm, wire, pD->m_pSkinningData->pBoneQuatsS);
+				SoftwareSkinningDQ_VS_Emulator(pModelMesh, pObj->GetMatrix(passInfo), tang, bitang, norm, wire, pD->m_pSkinningData->pBoneQuatsS);
 			}
 		}
 #endif

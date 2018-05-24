@@ -1,4 +1,4 @@
-// Copyright 2001-2016 Crytek GmbH. All rights reserved.
+// Copyright 2001-2018 Crytek GmbH / Crytek Group. All rights reserved.
 #include "StdAfx.h"
 #include "AssetManager.h"
 
@@ -309,8 +309,6 @@ void CAssetManager::DeleteAssets(const std::vector<CAsset*>& assets, bool bDelet
 
 	for (auto x : assets)
 	{
-		MAKE_SURE(!x->IsReadOnly(), continue);
-
 		for (size_t i = 0, N = m_assets.size(); i < N; ++i)
 		{
 			if (x != m_assets[i])
@@ -388,6 +386,13 @@ bool CAssetManager::HasSharedSourceFile(const CAsset& asset) const
 	if (!asset.GetType()->IsImported())
 	{
 		return false;
+	}
+
+	// It could be possible that the source file of this asset is a regular asset file of another asset. 
+	// For example this is so for substance instance asset.
+	if (FindAssetForFile(asset.GetSourceFile()))
+	{
+		return true;
 	}
 
 	return std::find_if(m_assets.begin(), m_assets.end(), [&asset](const CAssetPtr& x)

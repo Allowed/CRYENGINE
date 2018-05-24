@@ -147,8 +147,8 @@ bool CSvoEnv::Render()
 	CRenderObject* pObjVox = 0;
 	{
 		pObjVox = Cry3DEngineBase::GetIdentityCRenderObject((*CVoxelSegment::m_pCurrPassInfo));
-		pObjVox->m_II.m_AmbColor = Cry3DEngineBase::Get3DEngine()->GetSkyColor();
-		pObjVox->m_II.m_Matrix.SetIdentity();
+		pObjVox->SetAmbientColor(Cry3DEngineBase::Get3DEngine()->GetSkyColor(), (*CVoxelSegment::m_pCurrPassInfo));
+		pObjVox->SetMatrix(Matrix34::CreateIdentity(), (*CVoxelSegment::m_pCurrPassInfo));
 		pObjVox->m_nSort = 0;
 		pObjVox->m_ObjFlags |= (/*FOB_NO_Z_PASS | */ FOB_NO_FOG);
 
@@ -440,7 +440,7 @@ bool CSvoEnv::Render()
 			Cry3DEngineBase::DrawSphere(vPos + pKernelPoints[i] * 4.f, .1f, (i < kRaysNum / 2) ? Col_Yellow : Col_Cyan);
 	}
 
-	StartupStreamingTimeTest(CVoxelSegment::m_streamingTasksInProgress == 0 && CVoxelSegment::m_updatesInProgressBri == 0 && CVoxelSegment::m_updatesInProgressTex == 0 && CVoxelSegment::m_tasksInProgressALL == 0);
+	StartupStreamingTimeTest(CVoxelSegment::m_streamingTasksInProgress == 0 && CVoxelSegment::m_updatesInProgressBri == 0 && CVoxelSegment::m_updatesInProgressTex == 0 && CVoxelSegment::m_bUpdateBrickRenderDataPostponed == 0);
 
 	// show GI probe object in front of the camera
 	if (GetCVars()->e_svoDebug == 1)
@@ -2217,7 +2217,8 @@ void C3DEngine::GetSvoBricksForUpdate(PodArray<SSvoNodeInfo>& arrNodeInfo, float
 
 bool C3DEngine::IsSvoReady(bool testPostponed) const
 {
-	return (CVoxelSegment::m_streamingTasksInProgress == 0) && ((CVoxelSegment::m_postponedCounter == 0) || (testPostponed == false));
+	return (CVoxelSegment::m_streamingTasksInProgress == 0) && ((CVoxelSegment::m_postponedCounter == 0) || (testPostponed == false)) &&
+	       (CVoxelSegment::m_updatesInProgressBri == 0) && (CVoxelSegment::m_updatesInProgressTex == 0) && (CVoxelSegment::m_bUpdateBrickRenderDataPostponed == 0);
 }
 
 int C3DEngine::GetSvoCompiledData(ICryArchive* pArchive)
@@ -2265,6 +2266,7 @@ void C3DEngine::LoadTISettings(XmlNodeRef pInputNode)
 		GetCVars()->e_svoTI_NumberOfBounces++;
 
 	GetCVars()->e_svoTI_SpecularAmplifier = (float)atof(GetXMLAttribText(pInputNode, szXmlNodeName, "SpecularAmplifier", "0"));
+	GetCVars()->e_svoTI_SpecularFromDiffuse = (int)atof(GetXMLAttribText(pInputNode, szXmlNodeName, "SpecularFromDiffuse", "0"));
 
 	GetCVars()->e_svoMinNodeSize = (float)atof(GetXMLAttribText(pInputNode, szXmlNodeName, "MinNodeSize", "0"));
 
@@ -2279,6 +2281,7 @@ void C3DEngine::LoadTISettings(XmlNodeRef pInputNode)
 
 	GetCVars()->e_svoTI_ShadowsFromSun = (int)atof(GetXMLAttribText(pInputNode, szXmlNodeName, "ShadowsFromSun", "0"));
 	GetCVars()->e_svoTI_ShadowsSoftness = (float)atof(GetXMLAttribText(pInputNode, szXmlNodeName, "ShadowsSoftness", "0"));
+	GetCVars()->e_svoTI_ShadowsFromHeightmap = (int)atof(GetXMLAttribText(pInputNode, szXmlNodeName, "ShadowsFromHeightmap", "0"));
 	GetCVars()->e_svoTI_Troposphere_Active = (int)atof(GetXMLAttribText(pInputNode, szXmlNodeName, "Troposphere_Active", "0"));
 	GetCVars()->e_svoTI_Troposphere_Brightness = (float)atof(GetXMLAttribText(pInputNode, szXmlNodeName, "Troposphere_Brightness", "0"));
 	GetCVars()->e_svoTI_Troposphere_Ground_Height = (float)atof(GetXMLAttribText(pInputNode, szXmlNodeName, "Troposphere_Ground_Height", "0"));

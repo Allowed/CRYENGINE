@@ -506,10 +506,8 @@ IUIElementIteratorPtr CFlashUIElement::GetInstances() const
 bool CFlashUIElement::LazyInit()
 {
 	if (!m_pFlashplayer)
-	{
 		Init();
-		return m_pFlashplayer != NULL;
-	}
+
 	return m_pFlashplayer != NULL;
 }
 
@@ -870,7 +868,7 @@ void CFlashUIElement::Render()
 
 	if (!HasExtTexture())
 	{
-		m_pFlashplayer->Render(gEnv->pRenderer->IsStereoEnabled());
+		m_pFlashplayer->Render();
 	}
 }
 
@@ -882,7 +880,7 @@ void CFlashUIElement::RenderLockless()
 
 	if (!HasExtTexture())
 	{
-		m_pFlashplayer->Render(gEnv->pRenderer->IsStereoEnabled());
+		m_pFlashplayer->Render();
 	}
 }
 

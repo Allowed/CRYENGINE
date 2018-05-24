@@ -1558,8 +1558,7 @@ void CGameEngine::Update()
 		bool bReadOnlyConsole = pRenderViewport ? pFocusWidget != pRenderViewport->GetViewWidget() : true;
 		gEnv->pConsole->SetReadOnly(bReadOnlyConsole);
 
-		uintptr_t hWnd = reinterpret_cast<uintptr_t>(pRenderViewport->GetSafeHwnd());
-		gEnv->pSystem->DoFrame(hWnd);
+		gEnv->pSystem->DoFrame((static_cast<CRenderViewport*>(pRenderViewport))->GetDisplayContext().GetDisplayContextKey());
 
 		// TODO: still necessary after AVI recording removal?
 		if (pRenderViewport)
@@ -1581,13 +1580,10 @@ void CGameEngine::Update()
 
 		CEnumFlags<ESystemUpdateFlags> updateFlags = ESYSUPDATE_EDITOR;
 
-		CRuler* pRuler = GetIEditorImpl()->GetRuler();
-		const bool bRulerNeedsUpdate = (pRuler && pRuler->HasQueuedPaths());
-
 		if (!m_bSimulationMode)
 			updateFlags |= ESYSUPDATE_IGNORE_PHYSICS;
 
-		if (!m_bSimulationModeAI && !bRulerNeedsUpdate)
+		if (!m_bSimulationModeAI)
 			updateFlags |= ESYSUPDATE_IGNORE_AI;
 
 		bool bUpdateAIPhysics = GetSimulationMode() || m_bUpdateFlowSystem;
@@ -1612,7 +1608,7 @@ void CGameEngine::Update()
 
 			const CRenderViewport* gameViewport = static_cast<CRenderViewport*>(GetIEditorImpl()->GetViewManager()->GetGameViewport());
 			CRY_ASSERT(gameViewport);
-			gEnv->pSystem->DoFrame(gameViewport->GetDisplayContext().GetDisplayContextHandle(), updateFlags);
+			gEnv->pSystem->DoFrame(gameViewport->GetDisplayContext().GetDisplayContextKey(), updateFlags);
 		}
 
 		GetIEditorImpl()->GetAI()->Update(updateFlags.UnderlyingValue());

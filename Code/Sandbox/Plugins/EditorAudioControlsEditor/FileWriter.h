@@ -2,14 +2,13 @@
 
 #pragma once
 
-#include "Assets.h"
+#include "Control.h"
 
-#include <CryAudio/IAudioSystem.h>
 #include <CrySystem/ISystem.h>
 
 namespace ACE
 {
-struct IEditorImpl;
+class CLibrary;
 
 static constexpr char* s_szLibraryNodeTag = "Library";
 static constexpr char* s_szFoldersNodeTag = "Folders";
@@ -18,7 +17,7 @@ static constexpr char* s_szFolderTag = "Folder";
 static constexpr char* s_szPathAttribute = "path";
 static constexpr char* s_szDescriptionAttribute = "description";
 
-struct SLibraryScope
+struct SLibraryScope final
 {
 	SLibraryScope()
 		: isDirty(false)

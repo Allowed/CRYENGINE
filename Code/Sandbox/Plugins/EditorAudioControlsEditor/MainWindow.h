@@ -63,7 +63,7 @@ protected slots:
 signals:
 
 	void SignalSelectedSystemControlChanged();
-	void SignalSelectConnectedSystemControl(CControl& systemControl, ControlId const itemId);
+	void SignalSelectConnectedSystemControl(ControlId const systemControlId, ControlId const implItemId);
 	void SignalSelectConnectedImplItem(ControlId const itemId);
 
 private slots:
@@ -84,11 +84,11 @@ private:
 	void                   ReloadSystemData();
 	void                   ReloadMiddlewareData();
 	void                   RefreshAudioSystem();
-	void                   BackupTreeViewStates();
-	void                   RestoreTreeViewStates();
+	void                   OnAboutToReload();
+	void                   OnReloaded();
 	bool                   TryClose();
 
-	std::vector<CAsset*>   GetSelectedAssets();
+	Assets                 GetSelectedAssets();
 
 	CSystemControlsWidget* CreateSystemControlsWidget();
 	CPropertiesWidget*     CreatePropertiesWidget();

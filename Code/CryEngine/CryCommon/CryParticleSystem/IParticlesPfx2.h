@@ -18,7 +18,7 @@ typedef Serialization::IArchive IArchive;
 
 template<typename F>
 struct TParticleStats
-	: INumberVector<F, 13, TParticleStats<F>>
+	: INumberVector<F, 17, TParticleStats<F>>
 {
 	TElementCounts<F> emitters;
 	TElementCounts<F> components;
@@ -27,8 +27,9 @@ struct TParticleStats
 		: INumberVector<F, 5, ParticleStats>
 		, TElementCountsBase<F>
 	{
-		F clipped = 0;
+		F culled = 0;
 	} particles;
+	TElementCounts<F> pixels;
 };
 
 typedef TParticleStats<uint> SParticleStats;
@@ -106,10 +107,11 @@ struct SParentData
 struct IParticleEffectPfx2 : public IParticleEffect
 {
 	virtual void                   SetChanged() = 0;
+	virtual void                   Update() = 0;
 	virtual uint                   GetNumComponents() const = 0;
 	virtual IParticleComponent*    GetComponent(uint componentIdx) const = 0;
 	virtual IParticleComponent*    AddComponent() = 0;
-	virtual void                   RemoveComponent(uint componentIdx) = 0;
+	virtual void                   RemoveComponent(uint componentIdx, bool bRecursive = false) = 0;
 	virtual Serialization::SStruct GetEffectOptionsSerializer() const = 0;
 	virtual TParticleAttributesPtr CreateAttributesInstance() const = 0;
 	virtual bool                   IsSubstitutedPfx1() const = 0;

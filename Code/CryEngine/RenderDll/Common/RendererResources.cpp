@@ -234,9 +234,6 @@ CTexture* CRendererResources::s_ptexSkyDomeMie;
 CTexture* CRendererResources::s_ptexSkyDomeRayleigh;
 CTexture* CRendererResources::s_ptexSkyDomeMoon;
 CTexture* CRendererResources::s_ptexColorChart;
-CTexture* CRendererResources::s_ptexStereoL = NULL;
-CTexture* CRendererResources::s_ptexStereoR = NULL;
-CTexture* CRendererResources::s_ptexQuadLayers[2] = { NULL };
 
 CTexture* CRendererResources::s_ptexFlaresOcclusionRing[MAX_OCCLUSION_READBACK_TEXTURES] = { NULL };
 CTexture* CRendererResources::s_ptexFlaresGather = NULL;
@@ -1418,6 +1415,9 @@ void CRendererResources::OnRenderResolutionChanged(int renderWidth, int renderHe
 		if (gcpRendD3D->m_bSystemTargetsInit)
 			ResizeSystemTargets(renderWidth, renderHeight);
 
+		// Stereo resources are used as temporary targets for deferred shaded viewports
+		gcpRendD3D->GetS3DRend().OnResolutionChanged(renderWidth, renderHeight);
+
 		s_renderWidth  = renderWidth;
 		s_renderHeight = renderHeight;
 	}
@@ -1464,9 +1464,7 @@ void CRendererResources::Clear()
 		s_ptexPrevBackBuffer[1][1],
 		s_ptexSceneTarget,
 		s_ptexLinearDepth,
-		s_ptexHDRTarget,
-		s_ptexStereoL,
-		s_ptexStereoR,
+		s_ptexHDRTarget
 	};
 
 	for (auto pTex : clearTextures)
@@ -1498,10 +1496,6 @@ void CRendererResources::ShutDown()
 		s_ptexSceneTarget = NULL;
 		s_ptexLinearDepth = NULL;
 		s_ptexHDRTarget = NULL;
-		s_ptexStereoL = NULL;
-		s_ptexStereoR = NULL;
-		for (uint32 i = 0; i < 2; ++i)
-			s_ptexQuadLayers[i] = NULL;
 	}
 
 	if (s_ShaderTemplatesInitialized)
@@ -1663,7 +1657,7 @@ Ang3 sDeltAngles(Ang3& Ang0, Ang3& Ang1)
 	return out;
 }
 
-SEnvTexture* CRendererResources::FindSuitableEnvTex(Vec3& Pos, Ang3& Angs, bool bMustExist, int RendFlags, bool bUseExistingREs, CShader* pSH, CShaderResources* pRes, CRenderObject* pObj, bool bReflect, CRenderElement* pRE, bool* bMustUpdate)
+SEnvTexture* CRendererResources::FindSuitableEnvTex(Vec3& Pos, Ang3& Angs, bool bMustExist, int RendFlags, bool bUseExistingREs, CShader* pSH, CShaderResources* pRes, CRenderObject* pObj, bool bReflect, CRenderElement* pRE, bool* bMustUpdate, const SRenderingPassInfo* pPassInfo)
 {
 	SEnvTexture* cm = NULL;
 	float time0 = iTimer->GetAsyncCurTime();
@@ -1687,9 +1681,13 @@ SEnvTexture* CRendererResources::FindSuitableEnvTex(Vec3& Pos, Ang3& Angs, bool 
 			objPos = pl.MirrorPosition(Vec3(0, 0, 0));
 		}
 		else if (pRE)
-			pRE->mfCenter(objPos, pObj);
+			pRE->mfCenter(objPos, pObj, *pPassInfo);
 		else
-			objPos = pObj->GetTranslation();
+		{
+			CRY_ASSERT(!pPassInfo);
+			CRY_ASSERT(!gcpRendD3D->m_pRT->IsRenderThread());
+			objPos = pObj->GetMatrix(*pPassInfo).GetTranslation();
+		}
 	}
 	float dist = 999999;
 	for (i = 0; i < MAX_ENVTEXTURES; i++)
@@ -1735,12 +1733,12 @@ SEnvTexture* CRendererResources::FindSuitableEnvTex(Vec3& Pos, Ang3& Angs, bool 
 	}
 	else if (fDelta > fTimeInterval)
 		nUpdate = firstForUse;
-	if (nUpdate == -2)
+	if (nUpdate == -2 && firstForUse >= 0)
 	{
 		// No need to update (Up to date)
 		return &s_EnvTexts[firstForUse];
 	}
-	if (!s_EnvTexts[nUpdate].m_pTex)
+	if (nUpdate >= 0 && !s_EnvTexts[nUpdate].m_pTex)
 		return NULL;
 	if (nUpdate >= 0)
 	{
